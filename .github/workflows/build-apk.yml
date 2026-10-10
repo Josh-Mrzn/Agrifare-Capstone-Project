@@ -77,5 +77,9 @@ jobs:
             exit 0
           fi
           git commit -m "Build AgriFair.apk for $API_URL"
+          # The build also rewrites generated files (lockfiles, plugin
+          # registrants). Only the APK is published; drop the rest.
+          git reset --hard HEAD
+          git clean -fdq -- mobile
           git pull --rebase origin "${GITHUB_REF_NAME}"
           git push origin "HEAD:${GITHUB_REF_NAME}"
