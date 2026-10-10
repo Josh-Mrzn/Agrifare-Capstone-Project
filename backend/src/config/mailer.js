@@ -120,8 +120,8 @@ async function sendViaGmailApi(message) {
 
 /** "AgriFair <support@gmail.com>" -> { name: 'AgriFair', email: 'support@gmail.com' } */
 function parseAddress(value) {
-  const match = /^s*"?([^"<]*?)"?s*<([^>]+)>s*$/.exec(value || '');
-  if (match) return { name: match[1] || undefined, email: match[2].trim() };
+  const match = /^\s*"?([^"<]*?)"?\s*<([^>]+)>\s*$/.exec(value || '');
+  if (match) return { name: match[1].trim() || undefined, email: match[2].trim() };
   return { email: String(value || '').trim() };
 }
 
