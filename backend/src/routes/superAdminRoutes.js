@@ -7,6 +7,7 @@ import {
   createUser,
   getPendingApprovals,
   approveAdmin,
+  rejectSeller,
   updateUser,
   activateUser,
   getAuditLogs,
@@ -29,6 +30,7 @@ router.delete('/users/:id', deleteUser);
 router.post('/users', createUser);
 router.get('/approvals/pending', getPendingApprovals);
 router.put('/approvals/:id/approve', approveAdmin);
+router.put('/approvals/:id/reject', rejectSeller);
 router.get('/users/:id/analytics', getUserAnalytics);
 router.put('/users/:id', updateUser);
 router.put('/users/:id/activate', activateUser);

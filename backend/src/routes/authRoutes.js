@@ -6,6 +6,7 @@ import {
   logout,
   resendVerification,
   verifyEmailOtp,
+  verifyEmailLink,
   activationStatus,
   activateAccount,
   resendActivation,
@@ -27,6 +28,7 @@ router.post('/resend-verification', otpRequestLimiter, resendVerification);
 router.post('/forgot-password', otpRequestLimiter, forgotPassword);
 
 router.post('/verify-email-otp', otpSubmitLimiter, verifyEmailOtp);
+router.post('/verify-email', otpSubmitLimiter, verifyEmailLink);
 // A delivery person setting up the account their shop made for them, from the
 // emailed link. Checking the link and submitting the password are cheap;
 // asking for a new link sends mail, so it shares the request budget.

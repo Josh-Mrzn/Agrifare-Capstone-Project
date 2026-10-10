@@ -1,7 +1,6 @@
 import crypto from 'crypto';
 
 import User from '../models/User.js';
-import { getFirebaseAuth } from '../config/firebase.js';
 import { sendMailWithin, isMailConfigured, SEND_TIMEOUT_MS } from '../config/mailer.js';
 import { getAppUrl } from './authService.js';
 import { SEND_COOLDOWN_SECONDS, cooldownError, secondsLeft } from './sendCooldown.js';
@@ -169,10 +168,6 @@ export const activationService = {
 
   /**
    * Sets the password the rider chose and opens the account.
-   *
-   * Firebase is what the login checks; the local hash is the offline fallback.
-   * Both are written, or the account signs in differently depending on the
-   * network.
    */
   async activate({ token, password }) {
     if (!password || password.length < 6) {
@@ -197,16 +192,8 @@ export const activationService = {
       throw codedError('This link has expired. Send yourself a new one.', 'ACTIVATION_EXPIRED');
     }
 
-    if (user.firebaseUid) {
-      const auth = getFirebaseAuth();
-      if (!auth) {
-        throw new Error('Authentication service unavailable, so the password cannot be set right now.');
-      }
-      await auth.updateUser(user.firebaseUid, { password, emailVerified: true });
-    }
-
     // Plain text on purpose: the model's pre-save hook hashes it. Hashing here
-    // as well stored a hash of a hash, and the offline fallback never matched.
+    // as well stores a hash of a hash, and sign-in never matches.
     user.password = password;
     user.emailVerified = true;
     user.passwordSet = true;

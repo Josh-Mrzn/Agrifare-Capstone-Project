@@ -3,9 +3,8 @@ import User from '../models/User.js';
 import Order from '../models/Order.js';
 import { authRepository } from '../repositories/authRepository.js';
 import { findUserByUserId } from '../repositories/userRepository.js';
-import { getFirebaseAuth } from '../config/firebase.js';
 import { activationService } from './activationService.js';
-import { toNameKey } from '../models/User.js';
+import { toNameKey, EMAIL_PATTERN } from '../models/User.js';
 import * as notificationRepo from '../repositories/notificationRepository.js';
 
 /**
@@ -67,33 +66,13 @@ export const riderService = {
       throw new Error('That name is already taken. Add a middle initial.');
     }
 
-    const auth = getFirebaseAuth();
-    if (!auth) {
-      throw new Error('Authentication service unavailable, so the account cannot be created.');
+    if (!EMAIL_PATTERN.test(cleanEmail)) {
+      throw new Error('That does not look like a valid email address.');
     }
 
     // Long, random, and never returned anywhere. The account is unusable until
     // the rider replaces it through the activation flow.
     const placeholder = crypto.randomBytes(24).toString('base64url');
-
-    let firebaseUid;
-    try {
-      const fbUser = await auth.createUser({
-        email: cleanEmail,
-        password: placeholder,
-        displayName: cleanName,
-        emailVerified: false,
-      });
-      firebaseUid = fbUser.uid;
-    } catch (err) {
-      if (err.code === 'auth/email-already-exists') {
-        throw new Error('Somebody already uses that email.');
-      }
-      if (err.code === 'auth/invalid-email') {
-        throw new Error('That does not look like a valid email address.');
-      }
-      throw new Error(`Could not create the account: ${err.message}`);
-    }
 
     let rider;
     try {
@@ -107,11 +86,8 @@ export const riderService = {
         employedBy: sellerUserId,
         passwordSet: false,
         emailVerified: false,
-        firebaseUid,
       });
     } catch (err) {
-      // Do not leave an orphan behind in Firebase.
-      await auth.deleteUser(firebaseUid).catch(() => {});
       if (err.code === 11000) throw new Error('Somebody already uses that email.');
       throw err;
     }
@@ -255,6 +231,7 @@ export const riderService = {
         status: order.status,
         productName: order.productName,
         quantity: order.quantity,
+        weightKg: order.weightKg || 1,
         total: order.total,
         paymentMethod: order.paymentMethod,
         paymentStatus: order.paymentStatus,

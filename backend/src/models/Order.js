@@ -88,6 +88,8 @@ const orderSchema = new mongoose.Schema({
   },
   paymentMethod: {
     type: String,
+    // 'PayMongo' only so older orders that carry it still save. It is never
+    // offered: orderRules.PAYMENT_METHODS is what new orders may use.
     enum: ['Cash/COD', 'GCash', 'PayMongo'],
     default: 'Cash/COD',
   },
@@ -152,6 +154,13 @@ const orderSchema = new mongoose.Schema({
 
     courierName: { type: String, trim: true, default: '' },
     courierContact: { type: String, trim: true, default: '' },
+    /**
+     * The tracking or booking number when an outside courier (LBC, J&T, a
+     * Lalamove driver) carries the order instead of the seller's own rider.
+     * Required before such an order can be marked shipped, so a delivery
+     * arranged over the phone still leaves something to look up.
+     */
+    courierReference: { type: String, trim: true, default: '' },
     lat: { type: Number, default: null },
     lng: { type: Number, default: null },
     updatedAt: { type: Date },
@@ -181,6 +190,25 @@ const orderSchema = new mongoose.Schema({
   amountPaid: { type: Number, default: 0, min: 0 },
   paidAt: { type: Date },
   paymentReviewedAt: { type: Date },
+  paymentReviewedBy: { type: Number, default: null },
+
+  /**
+   * Every time the seller looked at this payment and what they decided. The
+   * GCash money never passes through AgriFair, so this trail is the only
+   * record of who said it arrived, how much, and against which reference.
+   */
+  paymentHistory: {
+    type: [{
+      _id: false,
+      status: { type: String, enum: ['paid', 'rejected'], required: true },
+      amount: { type: Number, default: 0 },
+      reference: { type: String, default: '' },
+      note: { type: String, default: '' },
+      reviewedBy: { type: Number },
+      at: { type: Date, default: Date.now },
+    }],
+    default: [],
+  },
 
   status: {
     type: String,
@@ -233,6 +261,7 @@ const orderSchema = new mongoose.Schema({
 
 orderSchema.index({ sellerId: 1, orderDate: -1 });
 orderSchema.index({ status: 1 });
+orderSchema.index({ paymentReference: 1 }, { sparse: true });
 
 const Order = mongoose.model('Order', orderSchema);
 export default Order;

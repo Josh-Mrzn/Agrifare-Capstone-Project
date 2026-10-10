@@ -12,6 +12,12 @@ export function toNameKey(name) {
     : '';
 }
 
+/** What a seller charges to deliver when they have not set their own fee. */
+export const DEFAULT_DELIVERY_FEE = 80;
+
+/** A deliberately loose shape check: something@something.tld, no spaces. */
+export const EMAIL_PATTERN = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+
 const userSchema = new mongoose.Schema({
   name: {
     type: String,
@@ -40,6 +46,10 @@ const userSchema = new mongoose.Schema({
     minlength: 6,
     select: false
   },
+  /**
+   * Left over from Firebase Auth, which is no longer used. Only
+   * scripts/syncFromFirebase.js reads it; nothing writes it any more.
+   */
   firebaseUid: {
     type: String,
     unique: true,
@@ -95,11 +105,14 @@ const userSchema = new mongoose.Schema({
   activationSentAt: { type: Date, default: null },
   status: {
     type: String,
-    enum: ['active', 'suspended', 'pending'],
+    // 'rejected': a seller application a Super Admin turned down.
+    enum: ['active', 'suspended', 'pending', 'rejected'],
     default: function () {
       return this.role === 'seller' ? 'pending' : 'active';
     }
   },
+  /** Why a seller application was rejected, shown to them at sign-in. */
+  statusReason: { type: String, trim: true, default: '' },
   userId: { type: Number, unique: true },
   lastLogin: {
     type: Date
@@ -182,6 +195,13 @@ const userSchema = new mongoose.Schema({
    */
   pickupLat: { type: Number, default: null },
   pickupLng: { type: Number, default: null },
+
+  /**
+   * What this seller charges to deliver one order, in pesos. One flat fee per
+   * seller per basket: sellers deliver locally and already quote one price.
+   * Null until they set it, which means DEFAULT_DELIVERY_FEE.
+   */
+  deliveryFee: { type: Number, min: 0, default: null },
 
   /**
    * Where a buyer wants their rice delivered. A list rather than one field:

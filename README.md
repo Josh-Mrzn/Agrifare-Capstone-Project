@@ -7,7 +7,7 @@ Tatlong bahagi ang sistema:
 
 | Bahagi | Teknolohiya | Para kanino |
 |---|---|---|
-| `backend/` | Node, Express, MongoDB, Firebase Auth | Pinagsasaluhan ng dalawa |
+| `backend/` | Node, Express, MongoDB | Pinagsasaluhan ng dalawa |
 | `frontend/` | React, Vite | Seller, admin, superadmin |
 | `mobile/` | Flutter | Buyer |
 
@@ -21,7 +21,7 @@ Ang plano ng pagkonekta ay nasa [phases.md](phases.md).
 
 ## Pagpapatakbo
 
-Kailangan: Node 18+, MongoDB, Flutter 3.41+, at isang Firebase project.
+Kailangan: Node 20+, MongoDB, at Flutter 3.41+.
 
 ### Backend
 
@@ -95,28 +95,51 @@ Kopyahin ang `backend/.env.example`. Ito ang mga hindi kusang gumagana:
 |---|---|
 | `MONGODB_URI` | Sarili mong MongoDB |
 | `JWT_SECRET` | Kahit anong mahabang random na teksto |
-| `FIREBASE_CREDENTIALS_PATH` | Service account JSON mula sa Firebase Console, Project settings, Service accounts |
-| `FIREBASE_WEB_API_KEY` | Firebase Console, Project settings, General |
-| `SMTP_USER`, `SMTP_PASS` | Para sa OTP. Sa Gmail, **App Password** ito, hindi ang password ng account mo |
+| `APP_URL` | Ang address ng web app. Dito tumuturo ang verification at activation link sa email |
+| `BREVO_API_KEY` | Pang-email (OTP, verification link, report). O kaya `SMTP_USER` at `SMTP_PASS`; sa Gmail, **App Password** ito, hindi ang password ng account mo |
 
-> Walang naka-commit na credential dito. Ang service account key at ang `.env`
-> ay naka-ignore, at kailangan mong ilagay ang sarili mo.
+> Walang naka-commit na credential dito. Naka-ignore ang `.env`, at kailangan
+> mong ilagay ang sarili mo.
+
+Para gumawa ng unang Super Admin (hindi na nakasulat sa code ang password):
+
+```bash
+SEED_SUPERADMIN_PASSWORD='mahabang-password' node src/scripts/seeder.js
+```
+
+### Paglipat mula sa Firebase (isang beses lang)
+
+Hindi na gumagamit ng Firebase Auth ang backend. Bago i-deploy ang bersiyong
+ito sa live na database, patakbuhin **isang beses**:
+
+```bash
+cd backend
+npm i --no-save firebase-admin
+FIREBASE_SERVICE_ACCOUNT='<service account JSON>' node src/scripts/syncFromFirebase.js          # tingnan muna
+FIREBASE_SERVICE_ACCOUNT='<service account JSON>' node src/scripts/syncFromFirebase.js --apply  # saka isulat
+```
+
+Kinokopya nito ang `emailVerified` mula sa Firebase, at minamarkahang verified
+ang mga account na walang Firebase user (ang seeded na superadmin, at ang
+ginawa ng Super Admin). Kung hindi ito patatakbuhin, may mga user na hindi
+makakapag-sign in. Hindi kailangang galawin ang mga password: nasa Mongo na ang
+bcrypt hash ng bawat isa.
 
 ---
 
 ## Mga bagay na madaling ikagulat
 
-**Iisa ang pinanggagalingan ng password, dalawa ang nagtatago.** Ang Firebase ang
-sinusuri ng login; ang bcrypt hash sa Mongo ay pamalit lang kapag hindi maabot
-ang Google. Kaya ang bawat pagpapalit ng password ay **kailangang magsulat sa
-dalawa** — kung isa lang, makakapasok pa rin ang lumang password.
+**Iisa ang pinagtataguan ng password: ang bcrypt hash sa Mongo.** Wala nang
+Firebase. Ang `findOneAndUpdate` ay hindi dumadaan sa pre-save hook ng User, kaya
+kapag doon magsusulat ng password, **i-hash muna** (tingnan ang
+`superAdminService.updateUser`).
 
 **Iba ang verification ng web at mobile.** Nakabatay sa `x-client` header:
 
 | Client | Natatanggap |
 |---|---|
 | `x-client: mobile` | 6 na digit sa email, dala ng nodemailer |
-| lahat ng iba | Firebase verification link |
+| lahat ng iba | Verification link (JWT, 24 oras) na binubuksan sa `/login?verify=…` |
 
 May anim na kahon ang cellphone at walang mabubuksang link nang hindi lumalabas
 ng app; may pahina ang web at walang kahon para sa code. Bawat isa ay
@@ -125,6 +148,22 @@ binibigyan ng kaya niyang tapusin.
 **Kailangang magpadala ng `role: 'buyer'` ang mobile sa pag-register.** Kapag
 wala, `seller` ang babagsakan ng backend — at ang seller ay naghihintay ng
 approval bago makapasok. Tahimik na magiging naka-lock ang bawat signup.
+
+**Ang server ang nagkukuwenta ng delivery fee.** Isang flat na fee bawat seller
+(`deliveryFee` sa account niya, ₱80 kung wala) para sa bawat order, gaano man
+karami ang sako. Hindi na tinatanggap ang fee na ipinapadala ng app.
+
+**May mga patakaran ang order na hindi malulusutan ng client** (nasa
+`services/orderRules.js`, may test sa `test/orderRules.test.js`):
+
+- GCash: kailangan ang resibo at ang reference number, at hindi puwedeng
+  gamitin ang isang reference sa dalawang order. Isang tindahan lang bawat
+  bayad sa GCash.
+- Hindi ma-accept ang GCash order hangga't hindi minamarkahang paid ng seller.
+- Hindi maipapadala ang order kung walang rider o courier na may tracking number.
+- Hindi magiging delivered nang walang litrato sa pinto.
+- Ang mamimili ang nagkukumpirmang natanggap; puwedeng isara ng seller pagkalipas
+  ng 3 araw kung hindi sumagot ang mamimili.
 
 **`variety` ang tawag sa uri ng bigas, hindi `category`.** Tinatanggap pa rin
 ang `category` bilang query alias.
@@ -141,7 +180,8 @@ ng `Out-File -Encoding utf8`.
 backend/src/
   routes/         → controllers/  → services/     → repositories/
   models/         mongoose schemas
-  config/         firebase, mailer
+  config/         mailer
+  utils/          maliliit na helper (hal. escapeRegex)
   middleware/     auth, rate limits, uploads
   scripts/        one-shot migrations
 
@@ -162,6 +202,9 @@ mobile/lib/
 ## Pagsubok
 
 ```bash
+cd backend
+npm test          # mga patakaran ng order, upload, at search (node:test)
+
 cd mobile
 flutter test
 ```

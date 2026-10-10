@@ -123,7 +123,8 @@ Query: `?page=`, `?limit=`, `?variety=` (o `?category=`), `?status=`, `?search=`
 | Route | Katawan | Ibinabalik |
 |---|---|---|
 | `POST /auth/register` | `name`, `email`, `password`, `role` | `user` + `verificationMethod` |
-| `POST /auth/login` | `email`, `password` | `token`, `firebaseIdToken`, `user` |
+| `POST /auth/login` | `email`, `password` | `token`, `user` |
+| `POST /auth/verify-email` | `token` (mula sa link sa email) | `message` |
 | `POST /auth/verify-email-otp` | `email`, `code` | `message` |
 | `POST /auth/resend-verification` | `email` | `message` |
 | `POST /auth/forgot-password` | `email` | `message` |
@@ -133,10 +134,9 @@ Query: `?page=`, `?limit=`, `?variety=` (o `?category=`), `?status=`, `?search=`
 
 ### Token
 
-Ang backend ay nag-iisyu ng **sariling JWT** (`token`) at nagpapasa rin ng
-`firebaseIdToken`. **Ang backend JWT ang itago at ipadala** bilang
-`Authorization: Bearer` — iyon ang tinitingnan ng lahat ng route. Ang Firebase
-ay para lang sa password.
+Ang backend ay nag-iisyu ng **sariling JWT** (`token`). Itago ito at ipadala
+bilang `Authorization: Bearer`; iyon ang tinitingnan ng lahat ng route. Walang
+Firebase: ang password ay bcrypt hash sa Mongo.
 
 ### Sino ang nagbibigay ng code, sino ang link
 
@@ -145,15 +145,15 @@ Nakabatay sa `x-client` header, at **link ang default**:
 | Client | `verificationMethod` |
 |---|---|
 | `x-client: mobile` | `otp` — 6 na digit sa email, dala ng nodemailer |
-| lahat ng iba (web) | `link` — Firebase verification link |
+| lahat ng iba (web) | `link`: JWT link papunta sa `/login?verify=…`, na ipinapasa ng web sa `POST /auth/verify-email` |
 
 Ipinapadala ito ng `ApiClient` ng mobile. Hindi kailangang gumawa ng anuman ang
 web — tama na ang default nito.
 
 ### Role sa pag-register
 
-Ang `allowedSelfRoles` ay `buyer`, `seller`, `superadmin`, at **`seller` ang
-babagsakan kapag walang ipinasa**. Ang seller ay nagiging `pending` at
+Ang `allowedSelfRoles` ay `buyer` at `seller`, at **`seller` ang babagsakan
+kapag walang ipinasa**. Tinatanggihan ang `superadmin` at `rider`. Ang seller ay nagiging `pending` at
 naghihintay ng approval ng Super Admin bago makapasok.
 
 > Kaya **kailangang magpadala ng `role: 'buyer'` ang mobile.** Kung hindi,
@@ -164,12 +164,14 @@ naghihintay ng approval ng Super Admin bago makapasok.
 - Kailangang **verified na ang email** — lahat ng role, kasama ang buyer.
 - Ang `seller` ay kailangang **`active`**, hindi `pending`.
 - Ang `suspended` ay tinatanggihan.
+- Ang `rejected` (seller na hindi inaprubahan) ay tinatanggihan, kasama ang dahilan.
 
 ---
 
 ## Natatangi ang pangalan at email
 
-Pareho itong sinusuri sa pag-register at sa `PUT /user/edit`. Ang pangalan ay
+Pareho itong sinusuri sa pag-register at sa `PUT /user/edit` (pangalan lang;
+hindi na mababago ang email mula sa profile, dahil ito ang na-verify na address). Ang pangalan ay
 hindi apektado ng laki ng letra at ng dami ng espasyo — iisa ang
 `"Reyca De Alba"`, `"reyca de alba"`, at `"reyca  de  alba"`.
 
@@ -202,9 +204,62 @@ Ang `429` ay JSON, kaya nababasa ng client ang dahilan:
 | Route | Layunin |
 |---|---|
 | `GET /cart`, `POST /cart/items`, `PUT /cart/items/:productId`, `DELETE /cart/items/:productId` | Cart |
-| `POST /cart/checkout` | Gumagawa ng order |
+| `POST /cart/checkout` | Gumagawa ng order (buyer lang) |
 | `GET /buyer/orders`, `GET /buyer/orders/:groupId`, `POST /buyer/orders/:groupId/cancel` | Order ng buyer |
+| `POST /buyer/orders/:groupId/received` | Kinukumpirma ng buyer na natanggap; nagiging `completed` ang mga `delivered` |
 | `GET /reviews/product/:productId`, `POST /reviews` | Review |
 | `GET /notifications`, `PUT /notifications/:id/read`, `PUT /notifications/read-all` | Abiso |
 | `GET /chat/conversations`, `GET /chat/messages/:conversationId`, `POST /chat/send` | Chat |
 | `GET /user/me`, `PUT /user/edit` | Profile |
+
+---
+
+## Cart at checkout
+
+Ang `GET /cart` (at bawat sagot ng cart route) ay may:
+
+```json
+{ "items": [], "subtotal": 2500, "deliveryFee": 50,
+  "deliveryFees": [{ "sellerId": 2, "fee": 50 }], "total": 2550 }
+```
+
+**Ang server ang nagkukuwenta ng `deliveryFee`**: isa bawat seller sa cart, mula
+sa `deliveryFee` ng seller (₱80 kung wala). Huwag nang magpadala ng fee sa
+checkout; hindi na ito binabasa.
+
+`POST /cart/checkout` (multipart):
+
+| Field | Kailan |
+|---|---|
+| `customerName`, `deliveryAddress` | Palagi |
+| `addressId` | Palagi. Isa sa mga naka-save na address ng buyer |
+| `customerContact` | PH mobile (`09…`, `+639…`). Kapag wala, kinukuha sa address |
+| `paymentMethod` | `Cash/COD` o `GCash` lang |
+| `paymentProof` (file) at `paymentReference` | Kapag GCash. Digits lang ang reference, at hindi puwedeng nagamit na sa ibang order |
+
+Isang tindahan lang bawat bayad sa GCash: tinatanggihan ang GCash checkout na
+may laman mula sa dalawang seller.
+
+## Seller: order
+
+| Route | Layunin |
+|---|---|
+| `PUT /admin/orders/:id/status` | `status`, `reason`. Sumusunod sa mga patakaran sa ibaba |
+| `PUT /admin/orders/:id/payment` | `paid`, `reference`, `amount`, `note`. Para sa lahat ng linya ng parehong checkout ng seller; naitatala sa `paymentHistory` |
+| `PUT /admin/orders/:id/courier` | `courierName`, `courierReference`, `courierContact`: courier na hindi sariling rider |
+| `POST /admin/orders/:id/delivered` | `proof` (litrato), `note`: seller ang nag-upload ng litrato sa pinto |
+
+Mga patakaran ng status (para sa order mula sa app):
+
+- `confirmed`: kapag GCash, kailangang `paid` na.
+- `shipped`: kailangang may rider, o courier na may tracking number.
+- `delivered`: kailangang may litrato sa pinto.
+- `completed`: ang buyer ang nagkukumpirma; puwedeng isara ng seller pagkalipas
+  ng 3 araw mula sa delivery.
+
+## Super Admin
+
+| Route | Layunin |
+|---|---|
+| `PUT /superadmin/approvals/:id/reject` | `reason`. Nagiging `rejected` ang seller; makikita niya ang dahilan sa sign-in |
+| `PUT /superadmin/users/:id` | `name`, `email`, `role`, `status`, `password` lang ang binabasa. Hina-hash ang password |

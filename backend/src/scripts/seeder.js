@@ -10,7 +10,17 @@ const __dirname = path.dirname(__filename);
 
 dotenv.config({ path: path.join(__dirname, '../../.env') });
 
+// Never written down here: a password in the repository is a password
+// everyone with the code knows. Pass it when running the seeder:
+//   SEED_SUPERADMIN_PASSWORD='...' node src/scripts/seeder.js
+const password = process.env.SEED_SUPERADMIN_PASSWORD;
+
 const seedSuperAdmin = async () => {
+  if (!password || password.length < 8) {
+    console.error('Set SEED_SUPERADMIN_PASSWORD (at least 8 characters) to run the seeder.');
+    process.exit(1);
+  }
+
   try {
     await mongoose.connect(process.env.MONGODB_URI);
 
@@ -28,7 +38,8 @@ const seedSuperAdmin = async () => {
       userId: nextId,      // ✅ Assigning the simple integer ID
       name: 'SuperAdmin',
       email: 'dev@agrifair.com',
-      password: '120903', 
+      password,
+      emailVerified: true,
       role: 'superadmin',
       status: 'active'
     });

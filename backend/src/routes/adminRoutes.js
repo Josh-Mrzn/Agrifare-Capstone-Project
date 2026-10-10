@@ -13,6 +13,8 @@ import {
   getMyCustomers,
   updateOrderStatusHandler,
   reviewOrderPaymentHandler,
+  setCourierHandler,
+  recordDeliveryHandler,
   emailReportHandler,
   mailStatusHandler,
   getInventorySummary,
@@ -41,6 +43,10 @@ router.get('/orders/customers', getMyCustomers);
 router.get('/orders', viewOrders);
 router.put('/orders/:id/status', updateOrderStatusHandler);
 router.put('/orders/:id/payment', reviewOrderPaymentHandler);
+router.put('/orders/:id/courier', setCourierHandler);
+// The photo at the door, when the seller's courier delivered rather than one
+// of their riders. Private like the rider's proof.
+router.post('/orders/:id/delivered', upload.single('proof'), recordDeliveryHandler);
 router.get('/reports/mail-status', mailStatusHandler);
 router.post('/reports/:type/email', emailReportHandler);
 

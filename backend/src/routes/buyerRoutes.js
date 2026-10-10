@@ -22,6 +22,7 @@ router.get('/orders', handle((req) => {
 
 router.get('/orders/:groupId', handle((req) => buyerService.getMyOrder(req.user.userId, req.params.groupId)));
 router.post('/orders/:groupId/cancel', handle((req) => buyerService.cancelMyOrder(req.user.userId, req.params.groupId, req.body?.reason)));
+router.post('/orders/:groupId/received', handle((req) => buyerService.confirmReceived(req.user.userId, req.params.groupId)));
 router.get('/stats', handle((req) => buyerService.getMyStats(req.user.userId)));
 
 export default router;

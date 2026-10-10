@@ -3,6 +3,7 @@ import { productRepository } from '../repositories/productRepository.js';
 import { getRatingMapForProducts } from '../repositories/reviewRepository.js';
 import { sellerService } from './sellerService.js';
 import { isSellerSuspended } from './sellerAvailability.js';
+import { AppError } from '../errors/appError.js';
 
 const NO_RATING = { averageRating: 0, reviewCount: 0 };
 
@@ -28,7 +29,7 @@ export const productService = {
   // Get all products
   async getAllProducts(page = 1, limit = 10, filters = {}) {
     if (page < 1 || limit < 1) {
-      throw new Error('Page and limit must be positive numbers');
+      throw new AppError('Page and limit must be positive numbers', 400);
     }
 
     const result = await productRepository.getAllProducts(page, limit, filters);
@@ -37,15 +38,11 @@ export const productService = {
 
   // Get product by ID
   async getProductById(id) {
-    if (!id) {
-      throw new Error('Product ID is required');
-    }
-
     const product = await productRepository.getProductById(id);
     // A suspended seller's listing answers exactly like a missing one, so an
     // old link or a saved screen cannot open a product nobody may buy.
     if (!product || await isSellerSuspended(product.createdBy)) {
-      throw new Error('Product not found');
+      throw new AppError('Product not found', 404);
     }
 
     const withRating = await withRatings(product);
@@ -72,68 +69,10 @@ export const productService = {
     return withRating;
   },
 
-  // Create new product
-  async createProduct(productData) {
-    const { name, variety, category, price, stock } = productData;
-    const riceVariety = variety || category;
-
-    if (!name || !riceVariety || price === undefined || stock === undefined) {
-      throw new Error('Name, variety, price, and stock are required');
-    }
-
-    if (price < 0) {
-      throw new Error('Price cannot be negative');
-    }
-
-    if (stock < 0) {
-      throw new Error('Stock cannot be negative');
-    }
-
-    return await productRepository.createProduct({ ...productData, variety: riceVariety });
-  },
-
-  // Update product
-  async updateProduct(id, updateData) {
-    if (!id) {
-      throw new Error('Product ID is required');
-    }
-
-    // Validate price if provided
-    if (updateData.price !== undefined && updateData.price < 0) {
-      throw new Error('Price cannot be negative');
-    }
-
-    // Validate stock if provided
-    if (updateData.stock !== undefined && updateData.stock < 0) {
-      throw new Error('Stock cannot be negative');
-    }
-
-    const product = await productRepository.updateProduct(id, updateData);
-    if (!product) {
-      throw new Error('Product not found');
-    }
-
-    return product;
-  },
-
-  // Delete product
-  async deleteProduct(id) {
-    if (!id) {
-      throw new Error('Product ID is required');
-    }
-
-    const product = await productRepository.deleteProduct(id);
-    if (!product) {
-      throw new Error('Product not found');
-    }
-
-    return product;
-  },
-
   // Get products by category
   async getProductsByCategory(category, options = {}) {
     if (!category) {
-      throw new Error('Category is required');
+      throw new AppError('Category is required', 400);
     }
 
     return await withRatings(
@@ -141,33 +80,10 @@ export const productService = {
     );
   },
 
-  // Get low stock products
-  async getLowStockProducts(threshold = 50) {
-    return await productRepository.getLowStockProducts(threshold);
-  },
-
-  // Get out of stock products
-  async getOutOfStockProducts() {
-    return await productRepository.getOutOfStockProducts();
-  },
-
-  // Update product stock
-  async updateStock(id, quantity) {
-    if (!id) {
-      throw new Error('Product ID is required');
-    }
-
-    if (typeof quantity !== 'number') {
-      throw new Error('Quantity must be a number');
-    }
-
-    return await productRepository.updateStock(id, quantity);
-  },
-
   // Search products
   async searchProducts(searchTerm, options = {}) {
     if (!searchTerm || searchTerm.trim() === '') {
-      throw new Error('Search term is required');
+      throw new AppError('Search term is required', 400);
     }
 
     return await withRatings(

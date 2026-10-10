@@ -6,7 +6,6 @@ import { riderService } from '../services/riderService.js';
 import { activationService, hashActivationToken } from '../services/activationService.js';
 import { authService } from '../services/authService.js';
 import * as deliveryService from '../services/deliveryService.js';
-import { getFirebaseAuth, initFirebase } from '../config/firebase.js';
 
 /**
  * Walks the whole delivery-person flow against the real database.
@@ -23,7 +22,6 @@ import { getFirebaseAuth, initFirebase } from '../config/firebase.js';
  * so a script cannot read the real one.
  */
 
-initFirebase();
 await mongoose.connect(process.env.MONGO_URI || process.env.MONGODB_URI);
 
 const SELLER = 6;
@@ -33,9 +31,6 @@ const PASSWORD = 'riderpass123';
 // Start clean so the run repeats.
 const old = await User.findOne({ email: EMAIL });
 if (old) {
-  if (old.firebaseUid) {
-    await getFirebaseAuth().deleteUser(old.firebaseUid).catch(() => {});
-  }
   await User.deleteOne({ _id: old._id });
   await Order.updateMany(
     { 'delivery.riderUserId': old.userId },

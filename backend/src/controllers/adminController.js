@@ -141,7 +141,26 @@ export const updateOrderStatusHandler = async (req, res) => {
     );
     res.status(200).json(order);
   } catch (error) {
-    res.status(400).json({ message: error.message });
+    res.status(error.statusCode || 400).json({ message: error.message });
+  }
+};
+
+export const setCourierHandler = async (req, res) => {
+  try {
+    res.json(await adminService.setCourier(req.params.id, req.user.userId, req.body || {}));
+  } catch (error) {
+    res.status(error.statusCode || 400).json({ message: error.message });
+  }
+};
+
+export const recordDeliveryHandler = async (req, res) => {
+  try {
+    res.json(await adminService.recordSellerDelivery(req.params.id, req.user.userId, {
+      proofPath: req.file ? `/api/files/${req.file.filename}` : '',
+      note: req.body?.note,
+    }));
+  } catch (error) {
+    res.status(error.statusCode || 400).json({ message: error.message });
   }
 };
 
@@ -197,7 +216,7 @@ export const reviewOrderPaymentHandler = async (req, res) => {
     res.json(order);
   } catch (error) {
     console.error('[seller] payment review failed:', error.message);
-    res.status(400).json({ error: error.message });
+    res.status(error.statusCode || 400).json({ message: error.message });
   }
 };
 

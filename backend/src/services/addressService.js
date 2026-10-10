@@ -1,5 +1,6 @@
 import { findUserByUserId } from '../repositories/userRepository.js';
 import { locateArea } from './geocodeService.js';
+import { normalizePhMobile } from './orderRules.js';
 
 /**
  * A buyer's saved delivery addresses.
@@ -80,9 +81,13 @@ async function fillAreaPin(fields, { pinnedByBuyer }) {
   return { ...fields, lat: area.lat, lng: area.lng, precision: 'approximate' };
 }
 
+/** Checks the address and stores the number in the one form riders dial. */
 function validate(fields) {
   if (!fields.fullName) throw new Error('Who is receiving this? Add a name.');
   if (!fields.contact) throw new Error('Add a contact number for the rider.');
+  const mobile = normalizePhMobile(fields.contact);
+  if (!mobile) throw new Error('Add a mobile number the rider can call, like 0917 123 4567.');
+  fields.contact = mobile;
   if (!fields.line) throw new Error('Add the street or purok.');
   if (!fields.city) throw new Error('Add the city or municipality.');
 }

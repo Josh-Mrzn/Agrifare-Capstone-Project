@@ -46,9 +46,10 @@ function describe(err) {
     return { status: 400, message: 'The request body is not valid JSON.' };
   }
 
-  // Multer and other middleware set a usable status of their own.
-  if (Number.isInteger(err?.status) && err.status >= 400 && err.status < 500) {
-    return { status: err.status, message: err.message || 'Request failed.' };
+  // Multer, AppError and other middleware set a usable status of their own.
+  const own = err?.statusCode ?? err?.status;
+  if (Number.isInteger(own) && own >= 400 && own < 500) {
+    return { status: own, message: err.message || 'Request failed.' };
   }
 
   return { status: 500, message: 'Something went wrong on our end.' };

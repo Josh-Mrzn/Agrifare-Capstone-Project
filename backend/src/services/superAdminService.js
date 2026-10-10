@@ -1,5 +1,7 @@
 import * as SuperAdminRepo from '../repositories/superAdminRepository.js';
 import * as orderRepo from '../repositories/orderRepository.js';
+import bcrypt from 'bcryptjs';
+import { toNameKey } from '../models/User.js';
 
 export const getAllUsers = async () => {
   return await SuperAdminRepo.findAllUsers();
@@ -70,7 +72,10 @@ export const createUser = async (userData, adminId) => {
   const newUser = await SuperAdminRepo.createUser({
     ...userData,
     userId: nextId,
-    status: 'active' 
+    status: 'active',
+    // A Super Admin typed this address in for someone they know, so there is
+    // no link to click. Sign-in checks this flag for every account.
+    emailVerified: true,
   });
   
   await SuperAdminRepo.createAuditLog({
@@ -87,8 +92,29 @@ export const createUser = async (userData, adminId) => {
 };
 
 // --- UPDATE USER ---
+/** What a Super Admin may change on an account from the edit form. */
+const EDITABLE = ['name', 'email', 'role', 'status'];
+
 export const updateUser = async (idFromUrl, updateData, adminId) => {
-  const user = await SuperAdminRepo.updateUser(idFromUrl, updateData);
+  const changes = {};
+  for (const key of EDITABLE) {
+    if (updateData[key] !== undefined) changes[key] = updateData[key];
+  }
+  if (changes.email !== undefined) changes.email = String(changes.email).trim().toLowerCase();
+  if (changes.name !== undefined) {
+    changes.name = String(changes.name).trim();
+    changes.nameKey = toNameKey(changes.name);
+  }
+
+  // findOneAndUpdate skips the model's pre-save hook, so a password set here
+  // has to be hashed here. Storing it as typed would both expose it and make
+  // it impossible to sign in with.
+  if (updateData.password) {
+    if (String(updateData.password).length < 6) throw new Error('Password must be at least 6 characters.');
+    changes.password = await bcrypt.hash(String(updateData.password), 12);
+  }
+
+  const user = await SuperAdminRepo.updateUser(idFromUrl, changes);
   if (!user) throw new Error("User not found");
 
   await SuperAdminRepo.createAuditLog({
@@ -116,7 +142,39 @@ export const approveAdmin = async (idFromUrl, superAdminId) => {
     targetEmail: user.email,
     targetName: user.name || '',
     targetRole: user.role || '',
-    details: `User ${user.email} moved from pending → active`
+    details: `User ${user.email} moved from pending to active`
+  });
+
+  return user;
+};
+
+/**
+ * Turns a seller application down. The account stays, so the decision and
+ * its reason are on record and the person is told why when they sign in.
+ */
+export const rejectSeller = async (idFromUrl, superAdminId, reason) => {
+  const cleanReason = String(reason || '').trim();
+  if (!cleanReason) throw new Error('Give a reason. The seller sees it when they try to sign in.');
+
+  const existing = await SuperAdminRepo.findUserById(idFromUrl);
+  if (!existing) throw new Error('User not found');
+  if (existing.role !== 'seller' || existing.status !== 'pending') {
+    throw new Error('Only a pending seller application can be rejected.');
+  }
+
+  const user = await SuperAdminRepo.updateUser(idFromUrl, {
+    status: 'rejected',
+    statusReason: cleanReason,
+  });
+
+  await SuperAdminRepo.createAuditLog({
+    adminId: superAdminId,
+    action: 'REJECT_SELLER',
+    targetId: user.userId,
+    targetEmail: user.email,
+    targetName: user.name || '',
+    targetRole: user.role || '',
+    details: `Seller application rejected: ${cleanReason}`,
   });
 
   return user;

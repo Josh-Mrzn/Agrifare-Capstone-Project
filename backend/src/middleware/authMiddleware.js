@@ -1,6 +1,4 @@
 import jwt from 'jsonwebtoken';
-import { getFirebaseAuth } from '../config/firebase.js';
-import { authRepository } from '../repositories/authRepository.js';
 import User from '../models/User.js';
 
 function attachUser(req, payload) {
@@ -40,66 +38,33 @@ export const protect = async (req, res, next) => {
     return res.status(401).json({ message: 'Not authorized' });
   }
 
-  let decoded = null;
+  let decoded;
   try {
-    // App JWT (issued after login)
     decoded = jwt.verify(token, process.env.JWT_SECRET);
-  } catch {
-    decoded = null;
-  }
-
-  if (decoded) {
-    // The token says who, not whether they are still allowed in. A day-long
-    // token issued before a suspension would otherwise keep working until it
-    // expired, so the account is read on every request.
-    try {
-      const account = await User.findOne({ userId: decoded.userId })
-        .select('status')
-        .lean();
-
-      if (!account) {
-        return res.status(401).json({ message: 'User not found' });
-      }
-      if (account.status === 'suspended') {
-        return refuseSuspended(res);
-      }
-    } catch (err) {
-      return next(err);
-    }
-
-    attachUser(req, decoded);
-    return next();
-  }
-
-  // Optional: accept Firebase ID tokens when WEB flow is enabled
-  try {
-    const auth = getFirebaseAuth();
-    if (!auth) {
-      return res.status(401).json({ message: 'Invalid token' });
-    }
-
-    const decodedFb = await auth.verifyIdToken(token);
-    const user =
-      (await authRepository.findByFirebaseUid(decodedFb.uid)) ||
-      (await authRepository.findByEmail(decodedFb.email));
-
-    if (!user) {
-      return res.status(401).json({ message: 'User not found' });
-    }
-
-    if (user.status === 'suspended') {
-      return refuseSuspended(res);
-    }
-
-    attachUser(req, {
-      userId: user.userId,
-      email: user.email,
-      role: user.role
-    });
-    return next();
   } catch {
     return res.status(401).json({ message: 'Invalid token' });
   }
+
+  // The token says who, not whether they are still allowed in. A day-long
+  // token issued before a suspension would otherwise keep working until it
+  // expired, so the account is read on every request.
+  try {
+    const account = await User.findOne({ userId: decoded.userId })
+      .select('status')
+      .lean();
+
+    if (!account) {
+      return res.status(401).json({ message: 'User not found' });
+    }
+    if (account.status === 'suspended') {
+      return refuseSuspended(res);
+    }
+  } catch (err) {
+    return next(err);
+  }
+
+  attachUser(req, decoded);
+  return next();
 };
 
 export const authorizeRoles = (...roles) => {

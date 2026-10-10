@@ -1,6 +1,7 @@
 // src/repositories/productRepository.js
 import Product, { STOREFRONT_FILTER } from '../models/Product.js';
 import { excludeSuspendedSellers } from '../services/sellerAvailability.js';
+import { escapeRegex } from '../utils/escapeRegex.js';
 
 export const productRepository = {
 
@@ -27,7 +28,7 @@ export const productRepository = {
       query.status = filters.status;
     }
     if (filters.search) {
-      query.name = { $regex: filters.search, $options: 'i' };
+      query.name = { $regex: escapeRegex(filters.search), $options: 'i' };
     }
 
     const products = await Product.find(query)
@@ -53,26 +54,6 @@ export const productRepository = {
     return await Product.findById(id);
   },
 
-  // Create new product
-  async createProduct(productData) {
-    const product = new Product(productData);
-    return await product.save();
-  },
-
-  // Update product
-  async updateProduct(id, updateData) {
-    return await Product.findByIdAndUpdate(
-      id,
-      updateData,
-      { new: true, runValidators: true }
-    );
-  },
-
-  // Delete product
-  async deleteProduct(id) {
-    return await Product.findByIdAndDelete(id);
-  },
-
   // Get products by rice variety
   async getProductsByCategory(variety, { includeSoldOut = false } = {}) {
     return await Product.find({
@@ -82,39 +63,15 @@ export const productRepository = {
     }).sort({ createdAt: -1 });
   },
 
-  // Get low stock products
-  async getLowStockProducts(threshold = 50) {
-    return await Product.find({ stock: { $lt: threshold, $gt: 0 } });
-  },
-
-  // Get out of stock products
-  async getOutOfStockProducts() {
-    return await Product.find({ stock: 0 });
-  },
-
-  // Update product stock
-  async updateStock(id, quantity) {
-    const product = await Product.findById(id);
-    if (!product) {
-      throw new Error('Product not found');
-    }
-
-    product.stock += quantity;
-    if (product.stock < 0) {
-      throw new Error('Insufficient stock');
-    }
-
-    return await product.save();
-  },
-
   // Search products
   async searchProducts(searchTerm, { includeSoldOut = false } = {}) {
+    const pattern = escapeRegex(searchTerm);
     return await Product.find({
       ...(includeSoldOut ? {} : STOREFRONT_FILTER),
       ...(await excludeSuspendedSellers()),
       $or: [
-        { name: { $regex: searchTerm, $options: 'i' } },
-        { description: { $regex: searchTerm, $options: 'i' } }
+        { name: { $regex: pattern, $options: 'i' } },
+        { description: { $regex: pattern, $options: 'i' } }
       ]
     });
   }

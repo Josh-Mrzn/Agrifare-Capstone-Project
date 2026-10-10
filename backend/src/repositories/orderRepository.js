@@ -27,15 +27,48 @@ export const hasActiveOrdersForProduct = async (productId) => {
   return count > 0;
 };
 
-export const updateOrderStatus = async (id, { status, statusReason, stockDeducted, historyEntry }) => {
-  return await Order.findByIdAndUpdate(
-    id,
+/**
+ * Moves an order from `from` to the new status only if it is still at `from`.
+ *
+ * Two clicks on "Confirm" (or two open tabs) both read "pending". Only the
+ * first of these conditional updates matches; the second finds nothing and
+ * returns null, so whatever follows - taking stock out - happens once.
+ */
+export const claimStatus = async (id, sellerId, from, { status, statusReason, historyEntry }) => {
+  return await Order.findOneAndUpdate(
+    { _id: id, sellerId, status: from },
     {
-      $set: { status, statusReason, stockDeducted },
+      $set: { status, statusReason },
       $push: { statusHistory: historyEntry },
     },
     { new: true }
   );
+};
+
+/** Undoes a claimStatus whose follow-up failed (for example, no stock left). */
+export const revertStatus = async (id, status) => {
+  return await Order.findByIdAndUpdate(id, {
+    $set: { status },
+    $pop: { statusHistory: 1 },
+  });
+};
+
+/**
+ * The lines one GCash transfer paid for: this seller's rows from the same
+ * checkout. An order typed in by the seller stands alone.
+ */
+export const findPaymentGroup = async (order) => {
+  if (!order.groupId) return [order];
+  return await Order.find({ groupId: order.groupId, sellerId: order.sellerId });
+};
+
+/** Whether this GCash reference is already recorded on an order outside `ids`. */
+export const referenceUsedElsewhere = async (reference, ids) => {
+  return Boolean(await Order.exists({ paymentReference: reference, _id: { $nin: ids } }));
+};
+
+export const setStockDeducted = async (id, stockDeducted) => {
+  return await Order.findByIdAndUpdate(id, { $set: { stockDeducted } });
 };
 
 const EIGHT_WEEKS_AGO = () => {

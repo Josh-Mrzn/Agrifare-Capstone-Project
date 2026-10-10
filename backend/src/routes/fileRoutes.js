@@ -6,6 +6,7 @@ import { PRIVATE_DIR } from '../middleware/multerMiddleware.js';
 import { findUserByUserId } from '../repositories/userRepository.js';
 import User from '../models/User.js';
 import Order from '../models/Order.js';
+import { escapeRegex } from '../utils/escapeRegex.js';
 
 const router = express.Router();
 
@@ -21,7 +22,7 @@ function ownedFiles(user) {
 
 /** Matches a stored path like `/api/files/<name>` by its last segment. */
 const endsWith = (filename) =>
-  new RegExp(`${filename.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}$`);
+  new RegExp(`${escapeRegex(filename)}$`);
 
 /**
  * Whether this file is a seller's payment QR that a Super Admin has approved.

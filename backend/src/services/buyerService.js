@@ -108,6 +108,8 @@ function groupOrders(rows) {
       isOngoing: !cancelled && stage !== 'delivered',
       // Set by the callers, which know the per-line statuses.
       canCancel: false,
+      // Something arrived and is waiting for the buyer to say so.
+      canConfirmReceived: g.items.some((i) => i.status === 'delivered'),
     };
   });
 }
@@ -165,6 +167,38 @@ export const cancelMyOrder = async (buyerUserId, groupId, reason) => {
       sellerUserId,
       buyerUserId,
       text: `The buyer cancelled order ${rows[0].orderNumber} - ${reason.trim()}.`,
+    });
+  }
+
+  return getMyOrder(buyerUserId, groupId);
+};
+
+/**
+ * The buyer's "I got it". Closes every delivered line of the order, and is
+ * the record that the rice arrived - said by the person who received it, not
+ * by the seller who would be paid for it.
+ */
+export const confirmReceived = async (buyerUserId, groupId) => {
+  const rows = await Order.find(matchGroup(buyerUserId, groupId));
+  if (!rows.length) throw new Error('Order not found');
+
+  const delivered = rows.filter((r) => r.status === 'delivered');
+  if (!delivered.length) {
+    throw new Error('Nothing on this order has been delivered yet.');
+  }
+
+  const now = new Date();
+  for (const row of delivered) {
+    row.status = 'completed';
+    row.statusHistory.push({ status: 'completed', changedAt: now, reason: 'Buyer confirmed receipt' });
+    await row.save();
+  }
+
+  for (const sellerUserId of new Set(delivered.map((r) => r.sellerId))) {
+    await postOrderSystemMessage({
+      sellerUserId,
+      buyerUserId,
+      text: `The buyer confirmed they received order ${rows[0].orderNumber}.`,
     });
   }
 

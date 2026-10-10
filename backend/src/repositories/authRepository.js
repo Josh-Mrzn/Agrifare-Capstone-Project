@@ -21,10 +21,6 @@ export const authRepository = {
     return User.findOne(query).select('name email');
   },
 
-  async findByFirebaseUid(firebaseUid) {
-    return User.findOne({ firebaseUid }).select('+password');
-  },
-
   async findByUserId(userId) {
     return User.findOne({ userId }).select('-password');
   },

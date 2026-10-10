@@ -8,7 +8,6 @@ import {
 import LoginSession from '../models/LoginSession.js';
 import { authRepository } from '../repositories/authRepository.js';
 import { toNameKey } from '../models/User.js';
-import { getFirebaseAuth } from '../config/firebase.js';
 
 // ====================== GET CURRENT USER ======================
 export const getMeService = async (userId) => {
@@ -16,7 +15,7 @@ export const getMeService = async (userId) => {
 };
 
 // ====================== UPDATE PROFILE ======================
-const FLAT_FIELDS = ['name', 'email', 'contact', 'bio', 'pickupAddress', 'deliveryOrigin', 'theme', 'sellerType'];
+const FLAT_FIELDS = ['name', 'contact', 'bio', 'pickupAddress', 'deliveryOrigin', 'theme', 'sellerType'];
 
 // Numbers, not text - the pickup point a rider navigates to. Handled apart
 // from FLAT_FIELDS because an empty string is a valid name and a nonsense
@@ -41,9 +40,20 @@ export const updateProfileService = async (userId, updateData, uploadedFiles = {
     filteredData[key] = n;
   }
 
-  // Name and email are unique across users, and this route can change both.
-  // The write below goes through findOneAndUpdate, which skips the pre-save
-  // hook, so nameKey is derived here instead of being left stale.
+  if (updateData.deliveryFee !== undefined) {
+    const fee = Number(updateData.deliveryFee);
+    if (!Number.isFinite(fee) || fee < 0 || fee > 5000) {
+      throw new Error('Delivery fee must be between ₱0 and ₱5,000.');
+    }
+    filteredData.deliveryFee = Math.round(fee);
+  }
+
+  // The email is not editable here: it is the verified address every reset
+  // code goes to, and changing it would skip that verification.
+  //
+  // Names are unique across users. The write below goes through
+  // findOneAndUpdate, which skips the pre-save hook, so nameKey is derived
+  // here instead of being left stale.
   if (filteredData.name !== undefined) {
     const cleanName = String(filteredData.name).trim();
     if (!cleanName) throw new Error('Name cannot be empty');
@@ -55,18 +65,6 @@ export const updateProfileService = async (userId, updateData, uploadedFiles = {
 
     filteredData.name = cleanName;
     filteredData.nameKey = nameKey;
-  }
-
-  if (filteredData.email !== undefined) {
-    const cleanEmail = String(filteredData.email).trim().toLowerCase();
-    if (!cleanEmail) throw new Error('Email cannot be empty');
-
-    const owner = await authRepository.findByEmail(cleanEmail);
-    if (owner && owner.userId !== userId) {
-      throw new Error('User with this email already exists');
-    }
-
-    filteredData.email = cleanEmail;
   }
 
   if (updateData.sellerProfile) {
@@ -187,7 +185,7 @@ export const updatePasswordService = async (
 
   if (!user) throw new Error('User not found');
   if (!user.password) {
-    throw new Error('This account signs in through Google/Firebase and has no password to change here.');
+    throw new Error('This account has no password to change here.');
   }
 
   const isMatch = await bcrypt.compare(currentPassword, user.password);
@@ -198,18 +196,6 @@ export const updatePasswordService = async (
 
   if (currentPassword === newPassword) {
     throw new Error('New password must be different');
-  }
-
-  // Firebase holds the password that login actually checks; the local hash is
-  // only the offline fallback. Updating Mongo alone left the account still
-  // signing in with the old password. Firebase goes first so a failure there
-  // stops the change instead of leaving the two out of step.
-  if (user.firebaseUid) {
-    const auth = getFirebaseAuth();
-    if (!auth) {
-      throw new Error('Firebase Auth is not configured, so the password cannot be changed right now.');
-    }
-    await auth.updateUser(user.firebaseUid, { password: newPassword });
   }
 
   const hashedPassword = await bcrypt.hash(newPassword, 12);

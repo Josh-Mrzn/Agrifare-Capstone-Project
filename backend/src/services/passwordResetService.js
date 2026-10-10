@@ -3,12 +3,16 @@ import jwt from 'jsonwebtoken';
 
 import { authRepository } from '../repositories/authRepository.js';
 import { updatePasswordByUserId } from '../repositories/userRepository.js';
-import { getFirebaseAuth } from '../config/firebase.js';
+import { sendMailWithin, SEND_TIMEOUT_MS } from '../config/mailer.js';
+import { getAppUrl } from './authService.js';
 import { otpService, normalizeEmail, OTP_PURPOSES } from './otpService.js';
 import { claimSendSlot } from './sendCooldown.js';
 
 const RESET_TOKEN_TTL = '15m';
 const RESET_TOKEN_PURPOSE = 'password-reset';
+
+const VERIFY_TOKEN_TTL = '24h';
+const VERIFY_TOKEN_PURPOSE = 'verify-email';
 
 function getJwtSecret() {
   const secret = process.env.JWT_SECRET;
@@ -61,11 +65,6 @@ export const passwordResetService = {
     return { resetToken };
   },
 
-  /**
-   * Firebase holds the password the login actually checks; the local bcrypt
-   * hash is only the offline fallback. Writing one and not the other leaves the
-   * account signing in with the old password, so both move together here.
-   */
   async resetPassword({ resetToken, newPassword }) {
     if (!resetToken || !newPassword) {
       throw new Error('Reset token and new password are required');
@@ -89,14 +88,6 @@ export const passwordResetService = {
     const user = await authRepository.findByEmail(payload.email);
     if (!user) throw new Error('User not found');
 
-    if (user.firebaseUid) {
-      const auth = getFirebaseAuth();
-      if (!auth) {
-        throw new Error('Firebase Auth is not configured, so the password cannot be changed right now.');
-      }
-      await auth.updateUser(user.firebaseUid, { password: newPassword });
-    }
-
     const hashedPassword = await bcrypt.hash(newPassword, 12);
     await updatePasswordByUserId(user.userId, hashedPassword);
 
@@ -119,11 +110,6 @@ export const emailVerificationService = {
     });
   },
 
-  /**
-   * Marks the address verified in both places. Firebase is what the login path
-   * reads back through syncEmailVerifiedFromFirebase, so writing only the local
-   * flag would be silently undone on the next sign-in.
-   */
   async verifySignupOtp({ email, code }) {
     const verified = await otpService.verify({
       email,
@@ -138,17 +124,78 @@ export const emailVerificationService = {
       return { message: 'This email is already verified. You can sign in.' };
     }
 
-    if (user.firebaseUid) {
-      const auth = getFirebaseAuth();
-      if (!auth) {
-        throw new Error('Firebase Auth is not configured, so the email cannot be verified right now.');
-      }
-      await auth.updateUser(user.firebaseUid, { emailVerified: true });
-    }
-
     user.emailVerified = true;
     await user.save();
 
     return { message: 'Email verified. You can sign in now.' };
-  }
+  },
+
+  /**
+   * The web's way to prove an address: a signed link instead of a code, since
+   * the sign-up page has no box to type six digits into.
+   *
+   * The token is a JWT rather than a stored value. It only ever says "this
+   * address was reachable", so opening it twice, or after the account is
+   * already verified, does no harm.
+   */
+  async sendSignupLink(user) {
+    const token = jwt.sign(
+      { purpose: VERIFY_TOKEN_PURPOSE, email: user.email },
+      getJwtSecret(),
+      { expiresIn: VERIFY_TOKEN_TTL }
+    );
+    const link = `${getAppUrl()}/login?verify=${encodeURIComponent(token)}`;
+
+    await sendMailWithin(SEND_TIMEOUT_MS, {
+      to: user.email,
+      subject: 'Verify your AgriFair email',
+      html: `
+        <div style="font-family:Segoe UI,Arial,sans-serif;max-width:480px;margin:0 auto;color:#16211b">
+          <h2 style="color:#3f6b4c;margin:0 0 8px">Verify your AgriFair email</h2>
+          <p style="margin:0 0 20px;color:#4c5b51">
+            Hi ${user.name || 'there'}, confirm this address to finish setting up your seller account.
+          </p>
+          <p style="margin:0 0 20px;text-align:center">
+            <a href="${link}"
+               style="display:inline-block;background:#2f6b45;color:#fff;text-decoration:none;
+                      font-weight:700;padding:14px 26px;border-radius:8px">
+              Verify email
+            </a>
+          </p>
+          <p style="margin:0 0 20px;color:#7c8b81;font-size:13px;word-break:break-all">
+            Button not working? Copy this into your browser:<br/>${link}
+          </p>
+          <p style="margin:0;color:#7c8b81;font-size:13px">
+            The link works for 24 hours. If you did not create an AgriFair account, ignore this email.
+          </p>
+        </div>
+      `,
+    });
+  },
+
+  async verifySignupLink({ token }) {
+    let payload;
+    try {
+      payload = jwt.verify(String(token || ''), getJwtSecret());
+    } catch {
+      throw new Error('This verification link has expired. Sign in to get a new one.');
+    }
+    if (payload.purpose !== VERIFY_TOKEN_PURPOSE) {
+      throw new Error('This is not a verification link.');
+    }
+
+    const user = await authRepository.findByEmail(payload.email);
+    if (!user) throw new Error('User not found');
+
+    if (!user.emailVerified) {
+      user.emailVerified = true;
+      await user.save();
+    }
+
+    return {
+      message: user.role === 'seller' && user.status === 'pending'
+        ? 'Email verified. A Super Admin will review your seller account before you can sign in.'
+        : 'Email verified. You can sign in now.',
+    };
+  },
 };

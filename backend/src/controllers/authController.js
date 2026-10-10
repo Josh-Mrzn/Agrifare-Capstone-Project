@@ -1,7 +1,6 @@
 import { authService } from '../services/authService.js';
 import { passwordResetService, emailVerificationService } from '../services/passwordResetService.js';
 import { activationService } from '../services/activationService.js';
-import { getIo } from '../sockets/socket.js';
 
 /** Never let the client fall back to a bare "Login failed" - always send real text. */
 function fail(res, status, err, fallback) {
@@ -27,7 +26,7 @@ export const register = async (req, res) => {
     res.status(201).json({
       success: true,
       message: user.verificationEmailSent
-        ? 'Account created. Please check your Gmail to verify your email.'
+        ? 'Account created. Check your email for the verification link.'
         : 'Account created, but the verification email could not be sent. Use Resend.',
       user
     });
@@ -67,27 +66,10 @@ export const login = async (req, res) => {
 
   res.cookie('accessToken', result.token, authService.getAuthCookieOptions());
 
-  // Broadcasting is best-effort - a socket problem must not reject a valid login.
-  try {
-    const io = getIo();
-    if (io) {
-      io.emit('new-login', {
-        userId: result.user.id,
-        name: result.user.name,
-        email: result.user.email,
-        role: result.user.role,
-        timestamp: new Date().toISOString()
-      });
-    }
-  } catch (err) {
-    console.warn('[auth] could not broadcast new-login:', err.message);
-  }
-
   return res.status(200).json({
     success: true,
     message: 'Login successful',
     token: result.token,
-    firebaseIdToken: result.firebaseIdToken || null,
     user: result.user
   });
 };
@@ -135,6 +117,16 @@ export const resetPassword = async (req, res) => {
     return res.status(200).json({ success: true, ...result });
   } catch (err) {
     return fail(res, 400, err, 'Could not reset the password');
+  }
+};
+
+/** The web's verification link, opened on the sign-in page and posted here. */
+export const verifyEmailLink = async (req, res) => {
+  try {
+    const result = await emailVerificationService.verifySignupLink(req.body || {});
+    return res.status(200).json({ success: true, ...result });
+  } catch (err) {
+    return fail(res, 400, err, 'Could not verify this email');
   }
 };
 

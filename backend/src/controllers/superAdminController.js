@@ -60,6 +60,15 @@ export const approveAdmin = async (req, res) => {
   }
 };
 
+export const rejectSeller = async (req, res) => {
+  try {
+    const user = await SuperAdminService.rejectSeller(req.params.id, req.user.userId, req.body?.reason);
+    res.json({ message: 'Seller application rejected', user });
+  } catch (error) {
+    res.status(400).json({ message: error.message });
+  }
+};
+
 export const createUser = async (req, res) => {
   try {
     const user = await SuperAdminService.createUser(req.body, req.user.userId);

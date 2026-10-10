@@ -1,12 +1,12 @@
 # AgriFair — System Architecture
 
 Paano nagkakadikit-dikit ang mga piraso: tatlong kliyente, isang backend, isang
-database, at tatlong panlabas na serbisyo. Ang dokumentong ito ay tungkol sa
+database, at dalawang panlabas na serbisyo. Ang dokumentong ito ay tungkol sa
 **kung ano ang totoong nakasulat sa code**, hindi sa balak — kaya may seksyon sa
 dulo para sa mga bagay na nakabitin pa.
 
 - **Repo:** `Captone-Project`
-- **Huling na-update:** Set 8, 2026
+- **Huling na-update:** Okt 6, 2026
 
 ---
 
@@ -21,7 +21,6 @@ graph TB
 
     subgraph server["Backend — Node + Express"]
         API["<b>REST API</b><br/>:8080/api"]
-        SOCK["Socket.io<br/><i>walang kliyente</i>"]
     end
 
     subgraph data["Data"]
@@ -31,20 +30,17 @@ graph TB
     end
 
     subgraph ext["Panlabas"]
-        FB["Firebase Auth<br/><i>password + verify link</i>"]
-        SMTP["Gmail SMTP<br/><i>nodemailer — OTP</i>"]
+        SMTP["Email<br/><i>Brevo o SMTP: OTP, verify link, report</i>"]
         PSGC["psgc.gitlab.io<br/><i>build time lang</i>"]
     end
 
     MOB -->|"HTTPS + Bearer JWT<br/>x-client: mobile"| API
     WEB -->|"HTTPS + Bearer JWT"| API
-    SOCK -.->|nakabitin| API
 
     API --> MONGO
     API --> FILES
     API --> PSGC_J
-    API -->|verify password<br/>set emailVerified| FB
-    API -->|OTP code| SMTP
+    API -->|OTP, link, PDF| SMTP
     PSGC -.->|"npm run build:psgc"| PSGC_J
 ```
 
@@ -107,13 +103,10 @@ sarili.
 sequenceDiagram
     participant M as Mobile
     participant A as API
-    participant F as Firebase
     participant DB as MongoDB
 
     M->>A: POST /auth/login (x-client: mobile)
-    A->>F: verify password
-    F-->>A: ok + emailVerified
-    A->>DB: sync emailVerified
+    A->>DB: hanapin ang user, ihambing ang bcrypt hash
     alt hindi pa verified
         A-->>M: 403 + code na maaaksyunan
         M->>A: POST /auth/verify-otp
@@ -123,16 +116,16 @@ sequenceDiagram
     M->>A: susunod na request + Bearer JWT
 ```
 
-Ang password ay **kay Firebase**, hindi sa Mongo. May bcrypt hash pa rin ang
-Mongo bilang offline fallback — kaya ang pagpapalit ng password ay dapat
-**sumulat sa dalawa**, kung hindi ay tatanggapin pa rin ang luma.
+Ang password ay bcrypt hash sa Mongo, at iyon lang ang sinusuri. Inalis na ang
+Firebase Auth (Okt 2026); ang `scripts/syncFromFirebase.js` ang isang beses na
+paglipat ng `emailVerified`.
 
 Ang paraan ng verification ay nakadepende sa kliyente:
 
 | Kliyente | Header | Paraan |
 |---|---|---|
 | Mobile | `x-client: mobile` | 6-digit OTP sa email (nodemailer) |
-| Web | wala | Firebase verification link |
+| Web | wala | JWT verification link sa email, binubuksan sa `/login?verify=…` |
 
 ---
 
@@ -491,17 +484,15 @@ adb reverse tcp:8080 tcp:8080
 
 Mga bagay na totoo sa code ngayon at dapat malaman:
 
-- **Tumatakbo ang Socket.io pero walang kumokonekta.** Wala ang `socket.io-client`
-  sa `mobile/pubspec.yaml` at sa `frontend/`. Ibig sabihin: **hindi live ang
-  mensahe** — kailangang muling basahin ng app. Ito ang susunod na malinaw na
-  hakbang para sa chat.
+- **Walang real-time na koneksiyon.** Inalis ang Socket.io: walang kliyenteng
+  kumokonekta, at walang pagsusuri kung sino ang nagpapadala. Binabasa ulit ng
+  web at app ang chat at mga abiso kada ilang segundo. Kapag ibabalik ito,
+  kailangang i-verify ang JWT sa handshake.
 - **Mock pa rin ang notifications sa mobile** — lokal na model, hindi
   `/api/notifications`.
-- **Peke ang `ForgotPasswordPage.jsx` sa web** — `setTimeout` lang, walang tunay
-  na tawag.
-- **Bukas sa kahit sino ang `/api/products/stock/low` at `/stock/out`** —
-  nakikita ng kahit sino ang kakulangan sa stock ng seller. Dapat nasa likod ng
-  `protect`.
+- **Nasa disk ng server ang mga upload.** Sa hosting na nabubura ang disk sa
+  bawat deploy (Railway na walang volume, Render), nawawala ang mga litrato at
+  resibo. Kailangan ng volume o ng object storage.
 - **Hindi pa nasusubukan nang buo ang GCash** hangga't walang seller na
   `payout.status === 'verified'`.
 - **Walang routing sa mapa.** Tuwid na linya ang guhit sa pagitan ng tindahan at
@@ -523,11 +514,15 @@ Captone-Project/
 │   ├── repositories/    mga query
 │   ├── models/          mongoose schema
 │   ├── middleware/      auth · rate limit · upload · error
-│   ├── config/          firebase · mailer
+│   ├── config/          mailer
+│   ├── utils/           escapeRegex
 │   ├── data/            PSGC JSON (galing sa build)
-│   ├── scripts/         buildPsgc · seeder · migrations
-│   └── sockets/         socket.io (walang kliyente)
-├── frontend/src/        React — seller · admin · superadmin
+│   ├── scripts/         buildPsgc · seeder · migrations · syncFromFirebase
+│   └── (test/)          node:test, `npm test`
+├── frontend/src/
+│   ├── components/      PortalShell · Modal · account forms · iba pang shared
+│   ├── pages/           landing · admin (seller) · superadmin · rider
+│   └── index.css        design tokens + shared components (light at dark)
 └── mobile/lib/
     ├── screens/         25 screen
     ├── services/        isang file bawat API area

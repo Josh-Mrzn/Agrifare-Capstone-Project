@@ -5,6 +5,14 @@ import Order from '../models/Order.js';
 import { findUserByUserId } from '../repositories/userRepository.js';
 import { postOrderSystemMessage } from './chatService.js';
 import { isSellerSuspended, suspendedSellerIds } from './sellerAvailability.js';
+import User from '../models/User.js';
+import {
+  PAYMENT_METHODS,
+  isGcash,
+  normalizePhMobile,
+  normalizeGcashReference,
+  deliveryFeesBySeller,
+} from './orderRules.js';
 
 /** Two lines are the same line only if the rice and the sack size both match. */
 const sameLine = (item, productId, weightKg) =>
@@ -25,9 +33,11 @@ function priceForWeight(product, weightKg) {
  */
 async function decorate(cart) {
   const ids = cart.items.map((i) => i.productId);
-  const [products, suspended] = await Promise.all([
+  const sellerIds = [...new Set(cart.items.map((i) => i.sellerId))];
+  const [products, suspended, sellers] = await Promise.all([
     Product.find({ _id: { $in: ids } }).lean(),
     suspendedSellerIds(),
+    User.find({ userId: { $in: sellerIds } }).select('userId deliveryFee').lean(),
   ]);
   const byId = new Map(products.map((p) => [String(p._id), p]));
   const closed = new Set(suspended);
@@ -79,9 +89,21 @@ async function decorate(cart) {
 
   const blocked = items.filter((i) => !i.inStock);
 
+  // Worked out here, never taken from the phone: a fee the client sends is a
+  // fee the client can set to anything.
+  const fees = deliveryFeesBySeller(
+    items,
+    new Map(sellers.map((s) => [s.userId, s.deliveryFee])),
+  );
+  const deliveryFee = [...fees.values()].reduce((sum, fee) => sum + fee, 0);
+  const roundedSubtotal = Math.round(subtotal * 100) / 100;
+
   return {
     items,
-    subtotal: Math.round(subtotal * 100) / 100,
+    subtotal: roundedSubtotal,
+    deliveryFee,
+    deliveryFees: [...fees].map(([sellerId, fee]) => ({ sellerId, fee })),
+    total: Math.round((roundedSubtotal + deliveryFee) * 100) / 100,
     itemCount: items.reduce((n, i) => n + 1, 0),
     hasUnavailable: blocked.length > 0,
     unavailable: blocked.map((i) => i.name),
@@ -96,7 +118,7 @@ export const addItem = async (buyerUserId, { productId, weightKg, quantity }) =>
 
   if (!productId) throw new Error('Which product?');
   if (!Number.isFinite(weight) || weight <= 0) throw new Error('Choose a weight.');
-  if (!Number.isFinite(sacks) || sacks <= 0) throw new Error('Choose how many.');
+  if (!Number.isInteger(sacks) || sacks <= 0) throw new Error('Choose a whole number of sacks.');
 
   const product = await Product.findById(productId);
   if (!product) throw new Error('Product not found');
@@ -138,6 +160,8 @@ export const setQuantity = async (buyerUserId, productId, quantity, weightKg = 1
   const item = cart.items.find((i) => sameLine(i, productId, weight));
   if (!item) throw new Error('That item is not in your cart.');
 
+  if (!Number.isInteger(sacks)) throw new Error('Choose a whole number of sacks.');
+
   if (sacks <= 0) {
     cart.items = cart.items.filter((i) => !sameLine(i, productId, weight));
   } else {
@@ -168,11 +192,15 @@ export const checkout = async (buyerUserId, {
   deliveryAddress,
   paymentMethod,
   notes,
-  deliveryFee = 0,
   paymentProof = '',
   paymentReference = '',
   addressId = '',
 }) => {
+  const method = paymentMethod || 'Cash/COD';
+  if (!PAYMENT_METHODS.includes(method)) {
+    throw new Error(`Choose a payment method: ${PAYMENT_METHODS.join(' or ')}.`);
+  }
+
   const cart = await cartRepo.getOrCreate(buyerUserId);
   if (!cart.items.length) throw new Error('Your cart is empty.');
 
@@ -191,23 +219,41 @@ export const checkout = async (buyerUserId, {
   if (!deliveryAddress?.trim()) throw new Error('Add a delivery address.');
   if (!customerName?.trim()) throw new Error('Add the name for this delivery.');
 
-  // GCash means the money has already moved, so the proof comes with the
-  // order. Enforced here and not only on the checkout screen: the button being
-  // disabled is a courtesy to the buyer, not a rule - anything can post to
-  // this endpoint, and a seller left chasing an unprovable GCash order is the
-  // person who pays for that.
-  if (/gcash/i.test(paymentMethod || '') && !paymentProof) {
-    throw new Error('Upload your GCash receipt before placing this order.');
-  }
-
   const buyer = await findUserByUserId(buyerUserId);
 
-  // Where it is going, as a point. Read from the saved address rather than
-  // trusting coordinates in the request - the client can send any pair of
-  // numbers, and this one has to be the address the buyer actually picked.
-  const chosen = addressId
-    ? (buyer?.addresses || []).find((a) => String(a._id) === String(addressId))
-    : null;
+  // One of the buyer's saved addresses, not free text: the saved one carries
+  // the pin the rider navigates to, and coordinates sent in the request could
+  // be any pair of numbers.
+  const chosen = (buyer?.addresses || []).find((a) => String(a._id) === String(addressId));
+  if (!chosen) throw new Error('Choose one of your saved delivery addresses.');
+
+  const contact = normalizePhMobile(customerContact || chosen.contact || buyer?.contact);
+  if (!contact) {
+    throw new Error('Add a mobile number the rider can call, like 0917 123 4567.');
+  }
+
+  // GCash means the money has already moved, so the proof and its reference
+  // number come with the order. Enforced here and not only on the checkout
+  // screen: anything can post to this endpoint, and a seller left chasing an
+  // unprovable GCash order is the person who pays for that.
+  let reference = '';
+  if (isGcash(method)) {
+    if (!paymentProof) throw new Error('Upload your GCash receipt before placing this order.');
+
+    reference = normalizeGcashReference(paymentReference);
+    if (!reference) {
+      throw new Error('Enter the reference number from your GCash receipt (digits only).');
+    }
+    if (await Order.exists({ paymentReference: reference })) {
+      throw new Error('That GCash reference number is already on another order. Check your receipt.');
+    }
+
+    // One transfer pays one seller. Each shop has its own GCash account, so a
+    // single receipt cannot cover a basket from two of them.
+    if (new Set(view.items.map((line) => line.sellerId)).size > 1) {
+      throw new Error('GCash pays one shop at a time. Check out each shop separately, or use cash on delivery.');
+    }
+  }
 
   // One lookup per seller, not per line: a basket of four sacks from one shop
   // is one pickup point.
@@ -225,11 +271,13 @@ export const checkout = async (buyerUserId, {
   const groupId = crypto.randomUUID();
   const orderNumber = `AGF-${crypto.randomBytes(3).toString('hex').toUpperCase()}`;
 
-  // The delivery fee belongs to the whole basket, so it lands on the first row
-  // only — otherwise the buyer is charged once per seller.
+  // Each seller's fee lands on that seller's first row only, so it is
+  // charged once per shop, not once per sack.
+  const feeFor = new Map(view.deliveryFees.map(({ sellerId, fee }) => [sellerId, fee]));
   const orders = [];
-  for (const [index, line] of view.items.entries()) {
-    const fee = index === 0 ? Number(deliveryFee) : 0;
+  for (const line of view.items) {
+    const fee = feeFor.get(line.sellerId) ?? 0;
+    feeFor.delete(line.sellerId);
     orders.push(await Order.create({
       sellerId: line.sellerId,
       productId: line.productId,
@@ -245,16 +293,16 @@ export const checkout = async (buyerUserId, {
       subtotal: line.lineTotal,
       deliveryFee: fee,
       total: line.lineTotal + fee,
-      paymentMethod: paymentMethod || 'Cash/COD',
+      paymentMethod: method,
 
       // A receipt attached at checkout means the buyer has already sent the
       // money and is waiting on the seller to confirm it. Without one the
       // order is simply unpaid - cash on delivery, or GCash still to be sent.
       paymentStatus: paymentProof ? 'proof_sent' : 'unpaid',
       paymentProof,
-      paymentReference,
+      paymentReference: reference,
       customerName: customerName.trim(),
-      customerContact: customerContact?.trim() || buyer?.contact || '',
+      customerContact: contact,
       deliveryAddress: deliveryAddress.trim(),
       buyerUserId,
       status: 'pending',
@@ -297,7 +345,7 @@ export const checkout = async (buyerUserId, {
       buyerUserId,
       text:
         `Order ${orderNumber} placed - ${items}. Total P${total.toFixed(2)}, ` +
-        `paid by ${paymentMethod || 'Cash/COD'}. Waiting for the seller to confirm.`,
+        `paid by ${method}. Waiting for the seller to confirm.`,
     });
   }
 
@@ -306,7 +354,7 @@ export const checkout = async (buyerUserId, {
     groupId,
     itemCount: orders.length,
     total: orders.reduce((sum, o) => sum + Number(o.total), 0),
-    paymentMethod: paymentMethod || 'Cash/COD',
+    paymentMethod: method,
     deliveryAddress: deliveryAddress.trim(),
   };
 };

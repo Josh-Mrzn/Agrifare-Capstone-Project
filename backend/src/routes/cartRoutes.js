@@ -1,5 +1,5 @@
 import express from 'express';
-import { protect } from '../middleware/authMiddleware.js';
+import { protect, authorizeRoles } from '../middleware/authMiddleware.js';
 import upload from '../middleware/multerMiddleware.js';
 import * as cartService from '../services/cartService.js';
 
@@ -37,6 +37,8 @@ router.delete('/', handle((req) => cartService.clearCart(req.user.userId)));
 // folder, reachable only through the authenticated /api/files route.
 router.post(
   '/checkout',
+  // Sellers and riders have accounts too, but an order is placed by a buyer.
+  authorizeRoles('buyer'),
   upload.single('paymentProof'),
   handle((req) => cartService.checkout(req.user.userId, {
     ...(req.body || {}),

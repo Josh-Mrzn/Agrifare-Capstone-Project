@@ -1,98 +1,35 @@
-# 🌾 AgriFair Backend Architecture (Layered MVC)
+# AgriFair backend
 
-Welcome to the **AgriFair** Backend. This system is designed to enable **direct rice trading between farmers and buyers**, eliminating middlemen and ensuring fair pricing, transparency, and efficiency.
+Express and MongoDB. One REST API under `/api` for the web portals and the
+Flutter app. See `../API_CONTRACT.md` for the shapes of the answers.
 
-Built with a **4-Tier Layered MVC Architecture**, it ensures scalability, security (**DevSpec**), and real-time updates for transactions and order tracking.
+```bash
+npm install
+cp .env.example .env   # fill in MONGODB_URI, JWT_SECRET, APP_URL and email
+npm run dev            # http://localhost:8080
+npm test               # node:test, no database needed
+```
 
----
+## Layout
 
-## 📂 The Master Folder Structure
-
-This structure enforces strict **Separation of Concerns** — keeping the system clean, scalable, and maintainable.
-
----
-
-### 🌱 Core Layers
-| Folder | Responsibility |
+| Folder | What it holds |
 | :--- | :--- |
-| **`routes/`** | The "Marketplace Map." Connects API endpoints (orders, farmers, buyers, listings) to Controllers. |
-| **`controllers/`** | The "Handlers." Manage HTTP requests/responses with **no business logic**. |
-| **`services/`** | The "Marketplace Brain." Handles pricing logic, order matching, inventory, and transaction rules. |
-| **`repositories/`** | The "Data Access Layer." The **only** layer allowed to interact with the database (CRUD). |
-| **`models/`** | The "Schemas." Defines data structures like Farmers, Buyers, Rice Listings, Orders. |
+| `routes/` | URL to controller. Auth and role checks are attached here. |
+| `controllers/` | Reads the request, calls a service, sends the answer. |
+| `services/` | The rules: pricing, checkout, order status, payments, delivery. `orderRules.js` holds the order rules on their own so they can be tested. |
+| `repositories/` | Database queries. |
+| `models/` | Mongoose schemas. |
+| `middleware/` | Auth (JWT), rate limits, uploads (images and PDFs only), errors. |
+| `config/` | The mailer (Brevo, Gmail API or SMTP). |
+| `errors/` | `AppError`, an error with an HTTP status. |
+| `utils/` | Small helpers. |
+| `scripts/` | Seeder, data migrations, and the one-time `syncFromFirebase.js`. |
+| `data/` | PSGC address data, built once by `scripts/buildPsgc.js`. |
 
----
+Authentication is the backend's own: bcrypt password hashes in MongoDB and a
+JWT per session. Email verification is a 6-digit code on the phone and a
+signed link on the web.
 
-### 🛡️ Security & Operations (DevSpec)
-| Folder | Responsibility |
-| :--- | :--- |
-| **`validators/`** | **The Gatekeeper.** Validates farmer listings, buyer orders, and user inputs (Zod/Joi). |
-| **`middleware/`** | Global guards (Authentication, Rate Limiting, Error Handling). |
-| **`errors/`** | Custom error handling for consistent API responses. |
-| **`logs/`** | **Audit Trail.** Tracks transactions, errors, and system activity. |
-
----
-
-### 🚜 Marketplace Features & Utilities
-| Folder | Responsibility |
-| :--- | :--- |
-| **`sockets/`** | Real-time updates (order status, new listings, buyer-farmer notifications). |
-| **`jobs/`** | Background tasks (price updates, order expiration, reporting). |
-| **`scripts/`** | Data seeding (sample farmers, rice inventory). |
-| **`storage/`** | Handles uploads (documents, certifications, proof of harvest). |
-| **`utils/`** | Helpers (JWT auth, hashing, pricing calculators). |
-| **`configs/`** | Configurations (DB connection, Redis, environment setup). |
-| **`tests/`** | Unit and integration testing for reliability. |
-
----
-
-## 📦 Installation Guide
-
-### 1. Core Framework & Database
-```bash
-npm install express mongoose dotenv cors
-```
-
-### 2. Security Layer (Critical)
-```bash
-npm install helmet zod express-rate-limit jsonwebtoken bcryptjs
-```
-
-### 3. Real-Time Features
-```bash
-npm install socket.io redis
-```
-
-### 4. Logging & Monitoring
-```bash
-npm install morgan winston
-```
-
-### 5. Developer Tools
-```bash
-npm install -D nodemon
-```
-
----
-
-## 🔄 The "AgriFair" Request Flow
-
-1. **Client (Farmer/Buyer)** ➔ `routes/` (API endpoint access)
-2. `routes/` ➔ `middleware/` (Authentication & security checks)
-3. `middleware/` ➔ `validators/` (Input validation for listings/orders)
-4. `validators/` ➔ `controllers/` (Request handling)
-5. `controllers/` ➔ `services/` (Business logic: pricing, matching, order handling)
-6. `services/` ➔ `repositories/` (Database operations)
-7. `repositories/` ➔ `models/` (Data structure enforcement)
-8. **Response** ➔ Sent back to Client  
-   ⚡ Includes real-time updates via **Sockets** (order status, availability, transactions)
-
----
-
-## 🌟 Core System Goal
-
-AgriFair aims to:
-- 🌾 Empower **farmers** with fair, direct market access  
-- 🛒 Give **buyers** transparent pricing and reliable supply  
-- 🚫 Eliminate **middlemen exploitation**  
-- ⚡ Provide **real-time, secure, and scalable transactions**
+Uploaded files are written to `src/uploads/` (`media` is public, `private` is
+served only through `/api/files` to the people on that order). On a host whose
+disk is wiped on every deploy, give it a persistent volume.

@@ -9,9 +9,7 @@ import routes from './routes/index.js';
 import mongoose from 'mongoose';
 import cookieParser from 'cookie-parser';
 import cors from 'cors';
-import { initSockets } from './sockets/socket.js';
 import chatRoutes from './routes/chatRoutes.js';
-import { initFirebase } from './config/firebase.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -23,8 +21,6 @@ const port = process.env.PORT || 3000;
 // like it came from that proxy, so the rate limiters counted all users as one
 // and five code requests from anyone locked everyone out for 15 minutes.
 app.set('trust proxy', 1);
-
-initFirebase();
 
 // ====================== CORS (PUT FIRST) ======================
 // Vite falls back to 5174, 5175, ... when its default port is taken, so pinning a
@@ -80,7 +76,10 @@ app.use(cookieParser());
 // Only the public media folder is served statically. Credentials live in
 // uploads/private and are reachable only through the authenticated /api/files
 // route — serving the whole uploads tree made every document world-readable.
-app.use('/uploads/media', express.static(path.join(__dirname, 'uploads/media')));
+app.use('/uploads/media', express.static(path.join(__dirname, 'uploads/media'), {
+  // Served as what the extension says, never sniffed into something else.
+  setHeaders: (res) => res.setHeader('X-Content-Type-Options', 'nosniff'),
+}));
 
 // ====================== ROUTES ======================
 app.use('/api', routes);
@@ -96,11 +95,8 @@ mongoose.connect(process.env.MONGODB_URI)
   .then(() => console.log('🚀 MongoDB connected successfully'))
   .catch(err => console.error('❌ MongoDB connection error:', err));
 
-// ====================== SERVER & SOCKETS ======================
+// ====================== SERVER ======================
 const server = http.createServer(app);
-
-// Initialize WebSocket
-initSockets(server);
 
 /**
  * Without this, a busy port throws an unhandled 'error' event: eight lines of
@@ -141,7 +137,6 @@ server.listen(port, () => {
   console.log("ENV CHECK:", {
     PORT: process.env.PORT,
     JWT: process.env.JWT_SECRET ? 'SET' : 'NOT SET',
-    MONGO: process.env.MONGODB_URI ? 'SET' : 'NOT SET',
-    FIREBASE: process.env.FIREBASE_CREDENTIALS_PATH || 'default path'
+    MONGO: process.env.MONGODB_URI ? 'SET' : 'NOT SET'
   });
 });
