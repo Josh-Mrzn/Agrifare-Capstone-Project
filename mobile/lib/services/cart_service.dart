@@ -81,10 +81,17 @@ class ServerCart {
     required this.subtotal,
     required this.hasUnavailable,
     required this.unavailable,
-  });
+    this.deliveryFee = 0,
+    double? total,
+  }) : _total = total;
 
   final List<ServerCartItem> items;
   final double subtotal;
+
+  /// Worked out by the server: one fee per shop in the cart, each set by that
+  /// seller. The app shows it and never computes or sends it.
+  final double deliveryFee;
+  final double? _total;
 
   /// Something in the cart sold out while it sat there.
   final bool hasUnavailable;
@@ -93,9 +100,7 @@ class ServerCart {
   bool get isEmpty => items.isEmpty;
   int get sackCount => items.fold(0, (sum, i) => sum + i.quantity);
 
-  /// Flat for now, and only charged on a cart with something in it.
-  double get deliveryFee => items.isEmpty ? 0 : 80;
-  double get total => subtotal + deliveryFee;
+  double get total => _total ?? subtotal + deliveryFee;
 
   static const empty = ServerCart(
     items: [],
@@ -112,6 +117,8 @@ class ServerCart {
               .toList() ??
           const [],
       subtotal: (json['subtotal'] as num?)?.toDouble() ?? 0,
+      deliveryFee: (json['deliveryFee'] as num?)?.toDouble() ?? 0,
+      total: (json['total'] as num?)?.toDouble(),
       hasUnavailable: json['hasUnavailable'] == true,
       unavailable:
           (json['unavailable'] as List?)?.map((e) => e.toString()).toList() ??

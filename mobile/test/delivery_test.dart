@@ -93,7 +93,6 @@ void main() {
       customerContact: address.contact,
       deliveryAddress: address.formatted,
       paymentMethod: 'Cash/COD',
-      deliveryFee: 0,
       addressId: address.id,
     );
 

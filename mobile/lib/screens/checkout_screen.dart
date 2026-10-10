@@ -145,9 +145,13 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
     final cart = CartModel.of(context);
     if (!cart.isLoaded || cart.items.isEmpty) return false;
 
-    // GCash without a receipt leaves the seller nothing to check, so the
-    // button stays disabled rather than creating an order they must chase.
-    if (_method == PaymentMethod.gcash && _receipt == null) return false;
+    // GCash without a receipt and its reference number leaves the seller
+    // nothing to check against their own GCash history, so the button stays
+    // disabled rather than creating an order they must chase.
+    if (_method == PaymentMethod.gcash &&
+        (_receipt == null || _referenceController.text.trim().isEmpty)) {
+      return false;
+    }
 
     return true;
   }
@@ -170,7 +174,6 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
         ].join(' '),
         paymentMethod: _method.wireValue,
         notes: _notesController.text.trim(),
-        deliveryFee: cart.deliveryFee,
         receiptPath: _receipt?.path,
         paymentReference: _referenceController.text.trim(),
         addressId: address.id,
@@ -496,9 +499,12 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
         const SizedBox(height: 16),
         TextField(
           controller: _referenceController,
+          keyboardType: TextInputType.number,
+          // Rebuilds so the Place order button notices the number.
+          onChanged: (_) => setState(() {}),
           decoration: const InputDecoration(
-            labelText: 'Reference number (optional)',
-            hintText: 'From your GCash receipt',
+            labelText: 'GCash reference number',
+            hintText: 'The Ref No. on your GCash receipt',
           ),
         ),
         const SizedBox(height: 12),

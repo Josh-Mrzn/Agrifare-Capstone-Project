@@ -22,6 +22,25 @@ class OrderDetailScreen extends StatefulWidget {
 class _OrderDetailScreenState extends State<OrderDetailScreen> {
   late OrderGroup _order = widget.order;
   bool _cancelling = false;
+  bool _confirming = false;
+
+  Future<void> _confirmReceived() async {
+    setState(() => _confirming = true);
+
+    try {
+      final fresh = await OrderService.instance.confirmReceived(_order.groupId);
+      if (!mounted) return;
+      setState(() {
+        _order = fresh;
+        _confirming = false;
+      });
+      _notify('Thanks. The seller has been told your order arrived.');
+    } on ApiException catch (err) {
+      if (!mounted) return;
+      setState(() => _confirming = false);
+      _notify(err.message);
+    }
+  }
 
   Future<void> _refresh() async {
     try {
@@ -155,6 +174,14 @@ class _OrderDetailScreenState extends State<OrderDetailScreen> {
             if (_order.deliveryAddress.isNotEmpty) ...[
               const SizedBox(height: 16),
               _deliveryCard(),
+            ],
+            if (_order.canConfirmReceived) ...[
+              const SizedBox(height: 24),
+              ClayButton(
+                label: 'I received my order',
+                isLoading: _confirming,
+                onPressed: _confirming ? null : _confirmReceived,
+              ),
             ],
             if (_order.canCancel) ...[
               const SizedBox(height: 24),

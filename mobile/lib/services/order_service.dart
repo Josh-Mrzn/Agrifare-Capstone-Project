@@ -26,6 +26,13 @@ class OrderService {
     return OrderGroup.fromJson(body as Map<String, dynamic>);
   }
 
+  /// The buyer's confirmation that the rice arrived. It is the record of
+  /// delivery and closes the order.
+  Future<OrderGroup> confirmReceived(String groupId) async {
+    final body = await _api.post('/buyer/orders/$groupId/received', {});
+    return OrderGroup.fromJson(body as Map<String, dynamic>);
+  }
+
   /// The server decides whether cancelling is still allowed; the app only
   /// hides the button when it already knows the answer is no.
   Future<String> cancel(String groupId, String reason) async {

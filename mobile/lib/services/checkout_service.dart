@@ -32,7 +32,6 @@ class CheckoutService {
     required String customerContact,
     required String deliveryAddress,
     required String paymentMethod,
-    required double deliveryFee,
     String notes = '',
     String? receiptPath,
     String paymentReference = '',
@@ -47,7 +46,6 @@ class CheckoutService {
         'customerContact': customerContact,
         'deliveryAddress': deliveryAddress,
         'paymentMethod': paymentMethod,
-        'deliveryFee': deliveryFee.toStringAsFixed(0),
         if (notes.isNotEmpty) 'notes': notes,
         if (paymentReference.isNotEmpty) 'paymentReference': paymentReference,
         // The id, not the coordinates: the server reads the pin off the saved

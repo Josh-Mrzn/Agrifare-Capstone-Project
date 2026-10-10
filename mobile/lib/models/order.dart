@@ -99,6 +99,7 @@ class OrderGroup {
     required this.items,
     required this.total,
     required this.canCancel,
+    this.canConfirmReceived = false,
     this.deliveryFee = 0,
     this.paymentMethod = '',
     this.paymentStatus = '',
@@ -117,6 +118,9 @@ class OrderGroup {
   final List<OrderItem> items;
   final double total;
   final bool canCancel;
+
+  /// Something arrived and the server is waiting for the buyer to say so.
+  final bool canConfirmReceived;
   final double deliveryFee;
   final String paymentMethod;
   final String paymentStatus;
@@ -168,6 +172,7 @@ class OrderGroup {
       items: items,
       total: (json['total'] as num?)?.toDouble() ?? 0,
       canCancel: json['canCancel'] == true,
+      canConfirmReceived: json['canConfirmReceived'] == true,
       deliveryFee: (json['deliveryFee'] as num?)?.toDouble() ?? 0,
       paymentMethod: (json['paymentMethod'] ?? '').toString(),
       paymentStatus: (json['paymentStatus'] ?? '').toString(),

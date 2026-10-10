@@ -176,7 +176,6 @@ void main() {
           customerContact: saved.first.contact,
           deliveryAddress: saved.first.formatted,
           paymentMethod: 'GCash',
-          deliveryFee: 0,
           addressId: saved.first.id,
         ),
         throwsA(
@@ -198,7 +197,6 @@ void main() {
         customerContact: address.contact,
         deliveryAddress: address.formatted,
         paymentMethod: 'Cash/COD',
-        deliveryFee: 0,
         addressId: address.id,
       );
 
