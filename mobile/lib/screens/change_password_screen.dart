@@ -160,7 +160,7 @@ class _ChangePasswordScreenState extends State<ChangePasswordScreen> {
                         color: AppColors.surfaceSunken,
                         borderRadius: BorderRadius.circular(12),
                         border: Border.all(
-                          color: const Color(0x55FFFFFF),
+                          color: const Color(0x17122112),
                           width: 1,
                         ),
                       ),

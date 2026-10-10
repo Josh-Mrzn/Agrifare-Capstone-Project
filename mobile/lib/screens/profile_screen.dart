@@ -199,7 +199,7 @@ class ProfileScreenState extends State<ProfileScreen> {
                   if (i < children.length - 1)
                     const Divider(
                       height: 1,
-                      color: Color(0xFFD7DED4),
+                      color: Color(0x17122112),
                       indent: 70,
                       endIndent: 16,
                     ),
@@ -404,7 +404,7 @@ class _ProfileHeader extends StatelessWidget {
                 Container(
                   width: 1,
                   height: 40,
-                  color: const Color(0xFFD7DED4),
+                  color: const Color(0x17122112),
                 ),
                 _StatBox(
                   label: 'Total Spent',
@@ -414,7 +414,7 @@ class _ProfileHeader extends StatelessWidget {
                 Container(
                   width: 1,
                   height: 40,
-                  color: const Color(0xFFD7DED4),
+                  color: const Color(0x17122112),
                 ),
                 _StatBox(
                   label: 'Member Since',
@@ -615,7 +615,7 @@ class _StatBox extends StatelessWidget {
             decoration: BoxDecoration(
               color: AppColors.surfaceSunken,
               borderRadius: BorderRadius.circular(11),
-              border: Border.all(color: const Color(0x55FFFFFF), width: 1),
+              border: Border.all(color: const Color(0x17122112), width: 1),
             ),
             child: Icon(icon, size: 18, color: AppColors.primaryMedium),
           ),
@@ -675,7 +675,7 @@ class _MenuItem extends StatelessWidget {
               decoration: BoxDecoration(
                 color: AppColors.surfaceSunken,
                 borderRadius: BorderRadius.circular(12),
-                border: Border.all(color: const Color(0x55FFFFFF), width: 1),
+                border: Border.all(color: const Color(0x17122112), width: 1),
               ),
               child: Icon(icon, size: 20, color: accent),
             ),

@@ -75,7 +75,7 @@ class _MainScreenState extends State<MainScreen> {
         borderRadius: BorderRadius.vertical(top: Radius.circular(AppRadius.lg)),
         boxShadow: [
           BoxShadow(
-            color: Color(0x1F667A6C),
+            color: Color(0x17122112),
             offset: Offset(0, -6),
             blurRadius: 18,
           ),

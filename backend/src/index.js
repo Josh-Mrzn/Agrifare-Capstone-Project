@@ -1,7 +1,6 @@
 import dotenv from 'dotenv';
 dotenv.config();
 import path from 'path';
-import { fileURLToPath } from 'url';
 import express from 'express';
 import http from 'http';
 import { notFoundHandler, errorHandler } from './middleware/errorMiddleware.js';
@@ -10,14 +9,13 @@ import mongoose from 'mongoose';
 import cookieParser from 'cookie-parser';
 import cors from 'cors';
 import chatRoutes from './routes/chatRoutes.js';
+import { findStored, sendStored } from './middleware/multerMiddleware.js';
 
-const __filename = fileURLToPath(import.meta.url);
-const __dirname = path.dirname(__filename);
 
 const app = express();
 const port = process.env.PORT || 3000;
 
-// Railway puts one proxy in front of the app. Without this every request looks
+// The host (Render, Railway) puts one proxy in front of the app. Without this every request looks
 // like it came from that proxy, so the rate limiters counted all users as one
 // and five code requests from anyone locked everyone out for 15 minutes.
 app.set('trust proxy', 1);
@@ -73,13 +71,18 @@ app.get('/test', (req, res) => res.send('Server is alive!'));
 // ====================== MIDDLEWARE ======================
 app.use(express.json());
 app.use(cookieParser());
-// Only the public media folder is served statically. Credentials live in
-// uploads/private and are reachable only through the authenticated /api/files
-// route — serving the whole uploads tree made every document world-readable.
-app.use('/uploads/media', express.static(path.join(__dirname, 'uploads/media'), {
-  // Served as what the extension says, never sniffed into something else.
-  setHeaders: (res) => res.setHeader('X-Content-Type-Options', 'nosniff'),
-}));
+// Public uploads (product photos, avatars). Credentials are in the private
+// bucket and reachable only through the authenticated /api/files route.
+// Names are random and never reused, so browsers may cache them for good.
+app.get('/uploads/media/:filename', async (req, res, next) => {
+  try {
+    const file = await findStored('media', path.basename(req.params.filename));
+    if (!file) return res.status(404).end();
+    sendStored('media', file, res, 'public, max-age=31536000, immutable');
+  } catch (err) {
+    next(err);
+  }
+});
 
 // ====================== ROUTES ======================
 app.use('/api', routes);

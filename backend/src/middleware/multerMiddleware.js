@@ -1,27 +1,22 @@
 import crypto from 'crypto';
 import multer from 'multer';
-import fs from 'fs';
+import mongoose from 'mongoose';
 import path from 'path';
-import { fileURLToPath } from 'url';
-
-const __filename = fileURLToPath(import.meta.url);
-const __dirname = path.dirname(__filename);
-
-export const PUBLIC_DIR = path.join(__dirname, '../uploads/media');
-export const PRIVATE_DIR = path.join(__dirname, '../uploads/private');
-
-for (const dir of [PUBLIC_DIR, PRIVATE_DIR]) {
-  fs.mkdirSync(dir, { recursive: true });
-}
 
 /**
- * Anything a buyer is meant to see (product photos, farm photos, avatars) goes to
- * PUBLIC_DIR, which is served statically.
+ * Uploads are kept in the database (GridFS), not on the server's disk: free
+ * hosts like Render wipe the disk on every restart and deploy, which would
+ * take every photo and receipt with it.
+ *
+ * Anything a buyer is meant to see (product photos, farm photos, avatars) goes
+ * to the "media" bucket, served at /uploads/media/<name>.
  *
  * Credentials — BIR certificates, permits, payment QR codes — and payment
- * receipts go to PRIVATE_DIR,
- * which is never served statically. They are only readable through the
+ * receipts go to the "private" bucket. They are only readable through the
  * authenticated /api/files route, which checks who is asking.
+ *
+ * ponytail: GridFS shares the database's storage (512 MB on Atlas's free
+ * tier). Move to object storage (S3, R2, Cloudinary) if uploads outgrow it.
  */
 const PRIVATE_FIELDS = new Set(['paymentQr', 'document', 'paymentProof', 'proof']);
 
@@ -76,18 +71,57 @@ function fileFilter(req, file, cb) {
   return cb(err);
 }
 
-const storage = multer.diskStorage({
-  destination: (req, file, cb) => {
-    cb(null, PRIVATE_FIELDS.has(file.fieldname) ? PRIVATE_DIR : PUBLIC_DIR);
-  },
-  filename: (req, file, cb) => {
+const bucket = (name) =>
+  new mongoose.mongo.GridFSBucket(mongoose.connection.db, { bucketName: name });
+
+const bucketFor = (field) => (PRIVATE_FIELDS.has(field) ? 'private' : 'media');
+
+/** A multer storage engine that streams each upload into its GridFS bucket. */
+const storage = {
+  _handleFile(req, file, cb) {
     // Random name, not the original: a predictable filename is a guessable URL,
     // and the original name often leaks what the document is.
     const ext = extensionFor(file.fieldname, file);
-    const random = crypto.randomBytes(12).toString('hex');
-    cb(null, `${Date.now()}-${random}${ext}`);
+    const filename = `${Date.now()}-${crypto.randomBytes(12).toString('hex')}${ext}`;
+    const out = bucket(bucketFor(file.fieldname)).openUploadStream(filename, {
+      metadata: { contentType: EXTENSION_TYPES[ext] },
+    });
+
+    let settled = false;
+    const done = (err, info) => {
+      if (settled) return;
+      settled = true;
+      cb(err, info);
+    };
+    file.stream.on('error', done);
+    out.on('error', done);
+    out.on('finish', () => done(null, { filename, id: out.id, size: out.length }));
+    file.stream.pipe(out);
   },
-});
+
+  _removeFile(req, file, cb) {
+    if (!file.id) return cb(null);
+    bucket(bucketFor(file.fieldname)).delete(file.id).then(() => cb(null), cb);
+  },
+};
+
+/** A stored upload's record, or null. `kind` is "media" or "private". */
+export async function findStored(kind, filename) {
+  const [file] = await bucket(kind).find({ filename }).limit(1).toArray();
+  return file || null;
+}
+
+/** Streams a stored upload found with findStored. */
+export function sendStored(kind, file, res, cacheControl) {
+  res.set({
+    'Content-Type': file.metadata?.contentType || 'application/octet-stream',
+    'Content-Length': String(file.length),
+    // Served as what the extension says, never sniffed into something else.
+    'X-Content-Type-Options': 'nosniff',
+    'Cache-Control': cacheControl,
+  });
+  bucket(kind).openDownloadStream(file._id).on('error', () => res.destroy()).pipe(res);
+}
 
 const upload = multer({
   storage,

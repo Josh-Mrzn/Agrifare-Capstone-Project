@@ -252,7 +252,7 @@ class _NotificationCard extends StatelessWidget {
         onTap: () => _handleTap(context),
         padding: const EdgeInsets.all(14),
         shadows: AppShadows.subtle,
-        color: isUnread ? const Color(0xFFF7FAF5) : AppColors.surface,
+        color: isUnread ? const Color(0xFFF6F2E6) : AppColors.surface,
         child: Row(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
@@ -262,7 +262,7 @@ class _NotificationCard extends StatelessWidget {
               decoration: BoxDecoration(
                 color: AppColors.surfaceSunken,
                 shape: BoxShape.circle,
-                border: Border.all(color: const Color(0x55FFFFFF), width: 1),
+                border: Border.all(color: const Color(0x17122112), width: 1),
               ),
               child: Icon(_typeIcon(notification.type), size: 21, color: color),
             ),

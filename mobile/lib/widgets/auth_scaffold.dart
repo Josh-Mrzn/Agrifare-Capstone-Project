@@ -128,7 +128,7 @@ class AuthScaffold extends StatelessWidget {
     return Theme.of(context).copyWith(
       inputDecorationTheme: InputDecorationTheme(
         filled: true,
-        fillColor: PortalColors.surfaceSunken,
+        fillColor: PortalColors.clayRaised,
         isDense: true,
         contentPadding:
             const EdgeInsets.symmetric(horizontal: 14, vertical: 13),
@@ -136,7 +136,7 @@ class AuthScaffold extends StatelessWidget {
         prefixIconColor: PortalColors.textMuted,
         suffixIconColor: PortalColors.textMuted,
         border: border(Colors.transparent),
-        enabledBorder: border(const Color(0x66FFFFFF), 1.2),
+        enabledBorder: border(const Color(0x29122112), 1.2),
         focusedBorder: border(PortalColors.primaryMedium, 1.6),
         errorBorder: border(PortalColors.error, 1.4),
         focusedErrorBorder: border(PortalColors.error, 1.6),
@@ -340,12 +340,12 @@ class AuthClayField extends StatelessWidget {
       duration: const Duration(milliseconds: 160),
       padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 2),
       decoration: BoxDecoration(
-        color: PortalColors.surfaceSunken,
+        color: PortalColors.clayRaised,
         borderRadius: BorderRadius.circular(PortalClay.radiusMd),
         border: Border.all(
           color: hasError
               ? PortalColors.error.withValues(alpha: 0.55)
-              : const Color(0x66FFFFFF),
+              : const Color(0x29122112),
           width: 1.2,
         ),
       ),

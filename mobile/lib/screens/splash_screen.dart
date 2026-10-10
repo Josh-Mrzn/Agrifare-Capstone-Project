@@ -170,9 +170,9 @@ class _SplashScreenState extends State<SplashScreen>
                                 begin: Alignment.topLeft,
                                 end: Alignment.bottomRight,
                                 colors: [
-                                  Color(0xFFEAF1E6),
+                                  Color(0xFFF6F2E6),
                                   PortalColors.background,
-                                  Color(0xFFD8E2D4),
+                                  Color(0xFFECE6D6),
                                 ],
                               ),
                             ),

@@ -1,8 +1,7 @@
 import express from 'express';
-import fs from 'fs';
 import path from 'path';
 import { protect } from '../middleware/authMiddleware.js';
-import { PRIVATE_DIR } from '../middleware/multerMiddleware.js';
+import { findStored, sendStored } from '../middleware/multerMiddleware.js';
 import { findUserByUserId } from '../repositories/userRepository.js';
 import User from '../models/User.js';
 import Order from '../models/Order.js';
@@ -87,9 +86,9 @@ async function isPartyToDeliveryProof(userId, filename) {
 router.get('/:filename', protect, async (req, res) => {
   // basename() strips any ../ so a crafted name cannot escape the folder.
   const filename = path.basename(req.params.filename);
-  const filePath = path.join(PRIVATE_DIR, filename);
+  const file = await findStored('private', filename);
 
-  if (!fs.existsSync(filePath)) {
+  if (!file) {
     return res.status(404).json({ error: 'File not found' });
   }
 
@@ -108,8 +107,7 @@ router.get('/:filename', protect, async (req, res) => {
   }
 
   // Credentials must never be cached by a shared proxy.
-  res.setHeader('Cache-Control', 'private, no-store');
-  res.sendFile(filePath);
+  sendStored('private', file, res, 'private, no-store');
 });
 
 export default router;

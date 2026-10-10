@@ -147,7 +147,7 @@ class _ForgotPasswordScreenState extends State<ForgotPasswordScreen> {
           decoration: BoxDecoration(
             color: PortalColors.surface,
             borderRadius: BorderRadius.circular(12),
-            border: Border.all(color: const Color(0xFFCBD5C6)),
+            border: Border.all(color: const Color(0x29122112)),
           ),
           child: Column(
             children: [

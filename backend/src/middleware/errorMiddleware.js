@@ -42,11 +42,19 @@ function describe(err) {
     return { status: 401, message: 'Your session has expired. Please sign in again.' };
   }
 
+  // Multer's own errors carry no status: too large, too many files, and so on.
+  if (err?.name === 'MulterError') {
+    return {
+      status: 400,
+      message: err.code === 'LIMIT_FILE_SIZE' ? 'Files must be 8 MB or smaller.' : err.message,
+    };
+  }
+
   if (err?.type === 'entity.parse.failed') {
     return { status: 400, message: 'The request body is not valid JSON.' };
   }
 
-  // Multer, AppError and other middleware set a usable status of their own.
+  // AppError and other middleware set a usable status of their own.
   const own = err?.statusCode ?? err?.status;
   if (Number.isInteger(own) && own >= 400 && own < 500) {
     return { status: own, message: err.message || 'Request failed.' };

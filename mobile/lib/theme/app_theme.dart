@@ -1,98 +1,73 @@
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
 
-/// Claymorphism: surfaces sit just a shade off the background and are lifted by
-/// a pair of shadows - dark below-right, light above-left - so they read as
-/// soft pressed clay rather than cards floating on a page. Borders do almost
-/// no work here; the light does it.
-///
-/// That is why the surface and background colours are so close. Pushing them
-/// apart turns every element back into a flat card and the effect collapses.
+/// The same look as the web: a cream page, cards a shade lighter, forest
+/// greens for buttons and dark banners, and gold for highlights. Headings in
+/// Fraunces, everything else in DM Sans. Keep these in step with the tokens
+/// at the top of frontend/src/index.css.
 class AppColors {
   // Grounds.
-  //
-  // The gap between these three is what makes clay visible at all. Too close
-  // and the shadows have nothing to fall on - the first version had them a
-  // shade apart and every card read as flat. The background has to be dark
-  // enough for a white highlight to show against it.
-  static const Color background = Color(0xFFDFE7DB);
-  static const Color surface = Color(0xFFF3F7F1);
-  static const Color surfaceSunken = Color(0xFFD2DCCD);
+  static const Color background = Color(0xFFF4F0E6);
+  static const Color surface = Color(0xFFFFFCF5);
+  static const Color surfaceSunken = Color(0xFFECE6D6);
 
   // Brand
-  static const Color primaryDark = Color(0xFF1B3829);
-  static const Color primaryMedium = Color(0xFF4A7C59);
-  static const Color primaryLight = Color(0xFF8DB89A);
-  static const Color accent = Color(0xFFC9A96E);
+  static const Color primaryDark = Color(0xFF122112);
+  static const Color primaryMedium = Color(0xFF2D5A2D);
+  static const Color primaryLight = Color(0xFF7DBF7D);
+  static const Color accent = Color(0xFFC9A84C);
+  static const Color accentLight = Color(0xFFE8C97B);
 
   // Ink
-  static const Color textDark = Color(0xFF17251D);
-  static const Color textBody = Color(0xFF3D4B42);
-  static const Color textMuted = Color(0xFF7A8880);
+  static const Color textDark = Color(0xFF141A14);
+  static const Color textBody = Color(0xFF4B5148);
+  static const Color textMuted = Color(0xFF6B7268);
 
   // Meaning, kept apart from the brand green
-  static const Color error = Color(0xFFC0483A);
-  static const Color success = Color(0xFF3F7D53);
-  static const Color warning = Color(0xFFB8832F);
+  static const Color error = Color(0xFFC43C3C);
+  static const Color success = Color(0xFF2F7A52);
+  static const Color warning = Color(0xFF7A5F18);
 
-  // Clay lighting. One light source, upper left: a dark shadow cast down-right
-  // and a bright highlight catching the upper-left edge. Both have to be
-  // strong enough to see on a phone in daylight.
-  static const Color shadowDark = Color(0x5C5A705E);
-  static const Color shadowLight = Color(0xFFFFFFFF);
+  // Shadows are forest-tinted, never grey, as on the web.
+  static const Color shadowDark = Color(0x17122112);
+  static const Color shadowLight = Color(0x00FFFFFF);
 
-  // Kept so older screens keep compiling while they are moved over.
-  static const Color border = Color(0xFFCBD5C6);
-  static const Color inputFill = Color(0xFFD2DCCD);
+  static const Color border = Color(0x29122112);
+  static const Color inputFill = Color(0xFFFFFCF5);
 }
 
-/// One radius scale, kept tighter than clay usually goes.
-///
-/// The shadows carry the shape here, so the corners do not have to. Softer
-/// curves than these started to read as pill-shaped rather than moulded.
+/// The web's radius scale: 10 for controls, 16 for cards.
 class AppRadius {
   static const double sm = 10;
-  static const double md = 14;
-  static const double lg = 18;
-  static const double xl = 22;
+  static const double md = 12;
+  static const double lg = 16;
+  static const double xl = 20;
   static const double pill = 999;
 }
 
 class AppShadows {
-  /// Raised: the default for anything that sits on top of the page.
+  /// Cards and anything that sits on the page (the web's --sh-md).
   static const List<BoxShadow> raised = [
     BoxShadow(
-      color: AppColors.shadowDark,
-      offset: Offset(8, 8),
-      blurRadius: 18,
-    ),
-    BoxShadow(
-      color: AppColors.shadowLight,
-      offset: Offset(-7, -7),
-      blurRadius: 16,
+      color: Color(0x17122112),
+      offset: Offset(0, 12),
+      blurRadius: 28,
     ),
   ];
 
-  /// Softer, for elements repeated many times down a list, where the full
-  /// treatment turns into visual noise. Still visible - the point of the
-  /// lighter pair is less shout, not no shape.
+  /// For rows repeated down a list (the web's --sh-sm).
   static const List<BoxShadow> subtle = [
     BoxShadow(
-      color: Color(0x3D5A705E),
-      offset: Offset(5, 5),
-      blurRadius: 12,
-    ),
-    BoxShadow(
-      color: Color(0xF7FFFFFF),
-      offset: Offset(-4, -4),
-      blurRadius: 10,
+      color: Color(0x0D122112),
+      offset: Offset(0, 6),
+      blurRadius: 18,
     ),
   ];
 
-  /// For the primary green, whose own colour carries the weight.
+  /// Under the primary green button.
   static const List<BoxShadow> accent = [
     BoxShadow(
-      color: Color(0x384A7C59),
+      color: Color(0x332D5A2D),
       offset: Offset(0, 8),
       blurRadius: 18,
     ),
@@ -100,27 +75,28 @@ class AppShadows {
 }
 
 TextTheme _buildTextTheme(TextTheme base) {
-  // Plus Jakarta Sans: geometric enough to read as modern, with round
-  // terminals that agree with the soft shapes instead of fighting them.
-  final text = GoogleFonts.plusJakartaSansTextTheme(base);
+  // DM Sans for reading, Fraunces for headings: the web's pairing.
+  final text = GoogleFonts.dmSansTextTheme(base);
+  TextStyle? display(TextStyle? style) =>
+      style == null ? null : GoogleFonts.fraunces(textStyle: style);
 
   return text.copyWith(
-    displayLarge: text.displayLarge?.copyWith(
+    displayLarge: display(text.displayLarge)?.copyWith(
       fontWeight: FontWeight.w800,
       letterSpacing: -1.2,
       color: AppColors.textDark,
     ),
-    headlineLarge: text.headlineLarge?.copyWith(
+    headlineLarge: display(text.headlineLarge)?.copyWith(
       fontWeight: FontWeight.w800,
       letterSpacing: -0.8,
       color: AppColors.textDark,
     ),
-    headlineMedium: text.headlineMedium?.copyWith(
+    headlineMedium: display(text.headlineMedium)?.copyWith(
       fontWeight: FontWeight.w700,
       letterSpacing: -0.5,
       color: AppColors.textDark,
     ),
-    titleLarge: text.titleLarge?.copyWith(
+    titleLarge: display(text.titleLarge)?.copyWith(
       fontWeight: FontWeight.w700,
       letterSpacing: -0.3,
       color: AppColors.textDark,
@@ -157,37 +133,35 @@ ThemeData buildAppTheme() {
       elevation: 0,
       centerTitle: false,
       iconTheme: const IconThemeData(color: AppColors.textDark),
-      titleTextStyle: GoogleFonts.plusJakartaSans(
-        fontSize: 19,
+      titleTextStyle: GoogleFonts.fraunces(
+        fontSize: 20,
         fontWeight: FontWeight.w700,
         letterSpacing: -0.3,
         color: AppColors.textDark,
       ),
     ),
-    // Inputs are pressed into the page rather than raised off it, which is the
-    // half of claymorphism that says "you can type here".
     inputDecorationTheme: InputDecorationTheme(
       filled: true,
-      fillColor: AppColors.surfaceSunken,
+      fillColor: AppColors.inputFill,
       contentPadding: const EdgeInsets.symmetric(horizontal: 20, vertical: 18),
       border: OutlineInputBorder(
-        borderRadius: BorderRadius.circular(AppRadius.md),
-        borderSide: BorderSide.none,
+        borderRadius: BorderRadius.circular(AppRadius.sm),
+        borderSide: const BorderSide(color: AppColors.border),
       ),
       enabledBorder: OutlineInputBorder(
-        borderRadius: BorderRadius.circular(AppRadius.md),
-        borderSide: BorderSide.none,
+        borderRadius: BorderRadius.circular(AppRadius.sm),
+        borderSide: const BorderSide(color: AppColors.border),
       ),
       focusedBorder: OutlineInputBorder(
-        borderRadius: BorderRadius.circular(AppRadius.md),
-        borderSide: const BorderSide(color: AppColors.primaryMedium, width: 2),
+        borderRadius: BorderRadius.circular(AppRadius.sm),
+        borderSide: const BorderSide(color: Color(0xFF4A8C4A), width: 2),
       ),
       errorBorder: OutlineInputBorder(
-        borderRadius: BorderRadius.circular(AppRadius.md),
+        borderRadius: BorderRadius.circular(AppRadius.sm),
         borderSide: const BorderSide(color: AppColors.error, width: 1.5),
       ),
       focusedErrorBorder: OutlineInputBorder(
-        borderRadius: BorderRadius.circular(AppRadius.md),
+        borderRadius: BorderRadius.circular(AppRadius.sm),
         borderSide: const BorderSide(color: AppColors.error, width: 2),
       ),
       hintStyle: const TextStyle(color: AppColors.textMuted, fontSize: 15),
@@ -195,7 +169,7 @@ ThemeData buildAppTheme() {
     ),
     snackBarTheme: SnackBarThemeData(
       backgroundColor: AppColors.primaryDark,
-      contentTextStyle: GoogleFonts.plusJakartaSans(
+      contentTextStyle: GoogleFonts.dmSans(
         color: Colors.white,
         fontSize: 13.5,
         fontWeight: FontWeight.w500,
@@ -207,7 +181,7 @@ ThemeData buildAppTheme() {
       insetPadding: const EdgeInsets.all(16),
     ),
     dividerTheme: const DividerThemeData(
-      color: Color(0xFFD7DED4),
+      color: Color(0x17122112),
       thickness: 1,
       space: 1,
     ),

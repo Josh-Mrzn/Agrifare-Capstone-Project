@@ -77,14 +77,13 @@ class ClaySunken extends StatelessWidget {
         color: color,
         borderRadius: BorderRadius.circular(radius),
         // Inner shadows are not a thing in Flutter's BoxDecoration, so the
-        // recess is faked: a darker fill inside a hairline of light, which is
-        // what a pressed dent catches around its rim.
+        // recess is faked: a darker fill inside a thin hairline.
         //
         // The hairline has to be uniform. A Border with different sides cannot
         // be painted with a borderRadius - Flutter asserts "the following is
         // not uniform" and paints nothing at all, which is why every sunken
         // panel in the app was coming out flat.
-        border: Border.all(color: const Color(0x55FFFFFF), width: 1.2),
+        border: Border.all(color: const Color(0x17122112), width: 1.2),
       ),
       child: child,
     );
