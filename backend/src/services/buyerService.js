@@ -153,11 +153,18 @@ export const cancelMyOrder = async (buyerUserId, groupId, reason) => {
     throw new Error('The seller already started on this order. Message them to cancel.');
   }
 
-  for (const row of rows) {
-    row.status = 'cancelled';
-    row.statusReason = reason.trim();
-    row.statusHistory.push({ status: 'cancelled', changedAt: new Date(), reason: reason.trim() });
-    await row.save();
+  // Conditional on each line still being pending, in the database rather
+  // than in memory: the seller may be confirming at this same moment, and a
+  // plain save would overwrite their "confirmed" after stock was taken out.
+  const result = await Order.updateMany(
+    { _id: { $in: rows.map((r) => r._id) }, status: 'pending' },
+    {
+      $set: { status: 'cancelled', statusReason: reason.trim() },
+      $push: { statusHistory: { status: 'cancelled', changedAt: new Date(), reason: reason.trim() } },
+    },
+  );
+  if (result.modifiedCount === 0) {
+    throw new Error('The seller already started on this order. Message them to cancel.');
   }
 
   // One message per seller, not per row: a basket cancelled across three of
@@ -188,11 +195,13 @@ export const confirmReceived = async (buyerUserId, groupId) => {
   }
 
   const now = new Date();
-  for (const row of delivered) {
-    row.status = 'completed';
-    row.statusHistory.push({ status: 'completed', changedAt: now, reason: 'Buyer confirmed receipt' });
-    await row.save();
-  }
+  await Order.updateMany(
+    { _id: { $in: delivered.map((r) => r._id) }, status: 'delivered' },
+    {
+      $set: { status: 'completed' },
+      $push: { statusHistory: { status: 'completed', changedAt: now, reason: 'Buyer confirmed receipt' } },
+    },
+  );
 
   for (const sellerUserId of new Set(delivered.map((r) => r.sellerId))) {
     await postOrderSystemMessage({

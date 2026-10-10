@@ -6,6 +6,7 @@ import { findUserByUserId } from '../repositories/userRepository.js';
 import { activationService } from './activationService.js';
 import { toNameKey, EMAIL_PATTERN } from '../models/User.js';
 import * as notificationRepo from '../repositories/notificationRepository.js';
+import { updateOrderStatus } from './adminService.js';
 
 /**
  * Delivery people, added by the seller they work for.
@@ -158,6 +159,9 @@ export const riderService = {
     const order = await Order.findById(orderId);
     if (!order) throw new Error('Order not found.');
     if (order.sellerId !== sellerUserId) throw new Error('Not your order.');
+    if (['delivered', 'completed', 'cancelled'].includes(order.status)) {
+      throw new Error('This order is already finished.');
+    }
 
     if (riderUserId == null || riderUserId === '') {
       order.delivery = {
@@ -179,6 +183,11 @@ export const riderService = {
     if (!rider) throw new Error('That is not one of your delivery people.');
     if (rider.status === 'suspended') {
       throw new Error('That delivery person is suspended.');
+    }
+    // Nothing to carry until the seller has accepted it (and, for GCash,
+    // checked the payment).
+    if (order.status === 'pending') {
+      throw new Error('Confirm the order before assigning a delivery person.');
     }
 
     order.delivery = {
@@ -284,6 +293,12 @@ export const riderService = {
     if (order.status === 'cancelled') {
       throw new Error('This order was cancelled.');
     }
+    // Delivered only from "out for delivery". Jumping here from pending or
+    // confirmed would skip the seller's payment check and the stock deduction.
+    // An order already delivered may have its photo replaced.
+    if (!['shipped', 'delivered'].includes(order.status)) {
+      throw new Error('The seller has not sent this order out yet. Wait until it is marked out for delivery.');
+    }
 
     order.delivery = {
       ...(order.delivery?.toObject?.() || order.delivery || {}),
@@ -295,13 +310,13 @@ export const riderService = {
       lat: null,
       lng: null,
     };
-
-    if (order.status !== 'delivered' && order.status !== 'completed') {
-      order.status = 'delivered';
-      order.statusHistory.push({ status: 'delivered', changedAt: new Date() });
-    }
-
     await order.save();
+
+    if (order.status === 'shipped') {
+      // The same transition the seller's own "delivered" goes through, so the
+      // rules, the buyer's message and the notifications stay in one place.
+      await updateOrderStatus(order._id, order.sellerId, 'delivered');
+    }
 
     const rider = await findUserByUserId(riderUserId);
 

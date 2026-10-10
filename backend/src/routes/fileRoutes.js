@@ -83,31 +83,35 @@ async function isPartyToDeliveryProof(userId, filename) {
  * deliberately not served by express.static — a file behind a guessable URL is
  * a file anyone can take.
  */
-router.get('/:filename', protect, async (req, res) => {
-  // basename() strips any ../ so a crafted name cannot escape the folder.
-  const filename = path.basename(req.params.filename);
-  const file = await findStored('private', filename);
+router.get('/:filename', protect, async (req, res, next) => {
+  try {
+    // basename() strips any ../ so a crafted name cannot escape the folder.
+    const filename = path.basename(req.params.filename);
+    const file = await findStored('private', filename);
 
-  if (!file) {
-    return res.status(404).json({ error: 'File not found' });
-  }
-
-  if (req.user.role !== 'superadmin') {
-    const user = await findUserByUserId(req.user.userId);
-
-    const allowed =
-      ownedFiles(user).includes(filename)
-      || (await isApprovedPaymentQr(filename))
-      || (await isPartyToPaymentProof(req.user.userId, filename))
-      || (await isPartyToDeliveryProof(req.user.userId, filename));
-
-    if (!allowed) {
-      return res.status(403).json({ error: 'Not your file' });
+    if (!file) {
+      return res.status(404).json({ error: 'File not found' });
     }
-  }
 
-  // Credentials must never be cached by a shared proxy.
-  sendStored('private', file, res, 'private, no-store');
+    if (req.user.role !== 'superadmin') {
+      const user = await findUserByUserId(req.user.userId);
+
+      const allowed =
+        ownedFiles(user).includes(filename)
+        || (await isApprovedPaymentQr(filename))
+        || (await isPartyToPaymentProof(req.user.userId, filename))
+        || (await isPartyToDeliveryProof(req.user.userId, filename));
+
+      if (!allowed) {
+        return res.status(403).json({ error: 'Not your file' });
+      }
+    }
+
+    // Credentials must never be cached by a shared proxy.
+    sendStored('private', file, res, 'private, no-store');
+  } catch (err) {
+    next(err);
+  }
 });
 
 export default router;

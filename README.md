@@ -17,6 +17,9 @@ ng bumibili. Iisa ang API na kinakain nila — nakasulat sa
 
 Ang plano ng pagkonekta ay nasa [phases.md](phases.md).
 
+Para i-host (Vercel para sa website, Render para sa API, Atlas para sa database,
+at ang APK na nakakonekta sa mga ito): [DEPLOYMENT.md](DEPLOYMENT.md).
+
 ---
 
 ## Pagpapatakbo

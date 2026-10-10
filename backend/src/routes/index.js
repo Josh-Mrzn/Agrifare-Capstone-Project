@@ -14,8 +14,6 @@ import deliveryRoutes from "./deliveryRoutes.js";
 import riderRoutes from "./riderRoutes.js";
 import sellerRoutes from "./sellerRoutes.js";
 import geoRoutes from "./geoRoutes.js";
-// import userRoutes from "./userRoutes.js";
-// import bannerRoutes from './bannerRoutes.js';
 
 const router = express.Router();
 
@@ -31,9 +29,6 @@ router.get("/", (req, res) => {
       login: "POST api/auth/login",
       logout: "POST api/auth/logout",
       products: "GET api/products",
-      // Add more as you create them:
-      // profile: "GET api/user/profile",
-      // banners: "GET api/banner",
     },
   });
 });
@@ -53,6 +48,5 @@ router.use("/delivery", deliveryRoutes); // → /api/delivery/...
 router.use("/riders", riderRoutes); // → /api/riders/... (seller side and rider side)
 router.use("/sellers", sellerRoutes); // → /api/sellers/...
 router.use("/geo", geoRoutes); // → /api/geo/...
-// router.use("/banner", bannerRoutes); // → /api/banner/...
 
 export default router;

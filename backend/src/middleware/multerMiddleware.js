@@ -123,10 +123,45 @@ export function sendStored(kind, file, res, cacheControl) {
   bucket(kind).openDownloadStream(file._id).on('error', () => res.destroy()).pipe(res);
 }
 
-const upload = multer({
+const multerUpload = multer({
   storage,
   fileFilter,
   limits: { fileSize: 8 * 1024 * 1024 },
 });
+
+/** Every file multer stored for this request, whichever method it used. */
+const uploadedFiles = (req) => {
+  if (req.file) return [req.file];
+  if (Array.isArray(req.files)) return req.files;
+  if (req.files) return Object.values(req.files).flat();
+  return [];
+};
+
+/**
+ * Files are written before the handler validates anything, so a rejected
+ * checkout or profile edit would leave its receipt or photo in the database
+ * forever, and every retry would add another. When the response is an error,
+ * the request's uploads go with it.
+ */
+export function discardOnFailure(req, res, next) {
+  res.on('finish', () => {
+    if (res.statusCode < 400) return;
+    for (const file of uploadedFiles(req)) {
+      if (!file.id) continue;
+      bucket(bucketFor(file.fieldname)).delete(file.id).catch((err) => {
+        console.error('[upload] could not remove a rejected upload:', err.message);
+      });
+    }
+  });
+  next();
+}
+
+/** multer, with discardOnFailure in front of each of its middlewares. */
+const upload = {
+  single: (...args) => [discardOnFailure, multerUpload.single(...args)],
+  array: (...args) => [discardOnFailure, multerUpload.array(...args)],
+  fields: (...args) => [discardOnFailure, multerUpload.fields(...args)],
+  none: (...args) => [discardOnFailure, multerUpload.none(...args)],
+};
 
 export default upload;

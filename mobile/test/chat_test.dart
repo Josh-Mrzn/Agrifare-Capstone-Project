@@ -228,7 +228,6 @@ void main() {
         customerContact: address.contact,
         deliveryAddress: address.formatted,
         paymentMethod: 'Cash/COD',
-        deliveryFee: 0,
       );
 
       final conversations = await chat.conversations();

@@ -288,7 +288,9 @@ function DeliverySection({ order, busy, act, onView }) {
             </div>
 
             {mode === 'rider' && (
-              riders.length === 0 ? (
+              order.status === 'pending' ? (
+                <p className="muted">Confirm the order first, then choose who delivers it.</p>
+              ) : riders.length === 0 ? (
                 <p className="muted">You have no delivery people yet. Add one under Delivery.</p>
               ) : (
                 <label className="field">

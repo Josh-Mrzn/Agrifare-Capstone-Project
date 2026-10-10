@@ -106,9 +106,17 @@ export const updateProfileService = async (userId, updateData, uploadedFiles = {
     const current = await findUserByUserId(userId);
     const existing = current?.payout?.toObject?.() || current?.payout || {};
 
+    // Only the fields a seller may type. qrImage in particular comes from the
+    // upload alone: taking a path from the body would let anyone point their
+    // payout at someone else's private file and then read it as "theirs".
+    const typed = {};
+    for (const key of ['method', 'accountName', 'accountNumber']) {
+      if (typeof incoming?.[key] === 'string') typed[key] = incoming[key].trim();
+    }
+
     const next = {
       ...existing,
-      ...incoming,
+      ...typed,
       status: 'pending',
       rejectionReason: '',
       submittedAt: new Date(),

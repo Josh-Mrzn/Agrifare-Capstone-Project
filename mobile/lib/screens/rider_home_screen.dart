@@ -536,14 +536,21 @@ class _DeliveryCardState extends State<_DeliveryCard> {
               ),
             ),
             const SizedBox(height: 10),
-            ClayButton(
-              label: 'Take the photo at the door',
-              icon: Icons.photo_camera_rounded,
-              isLoading: widget.busy,
-              onPressed: widget.busy
-                  ? null
-                  : () => widget.onDelivered(_note.text),
-            ),
+            if (d.status == 'shipped')
+              ClayButton(
+                label: 'Take the photo at the door',
+                icon: Icons.photo_camera_rounded,
+                isLoading: widget.busy,
+                onPressed: widget.busy
+                    ? null
+                    : () => widget.onDelivered(_note.text),
+              )
+            else
+              const Text(
+                'The shop has not sent this order out yet. You can take the '
+                'photo once it is marked out for delivery.',
+                style: TextStyle(fontSize: 12, color: AppColors.textMuted),
+              ),
           ],
         ],
       ),

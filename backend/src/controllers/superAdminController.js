@@ -74,7 +74,7 @@ export const createUser = async (req, res) => {
     const user = await SuperAdminService.createUser(req.body, req.user.userId);
     res.status(201).json(user);
   } catch (error) {
-    res.status(500).json({ error: error.message });
+    res.status(400).json({ error: error.message });
   }
 };
 

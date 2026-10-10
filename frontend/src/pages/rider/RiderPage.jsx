@@ -261,18 +261,24 @@ export default function RiderPage() {
                         />
                       </label>
 
-                      <label className={`btn btn-primary btn-lg btn-block${busy === d.orderId ? ' is-disabled' : ''}`}>
-                        <Camera size={18} aria-hidden="true" />
-                        {busy === d.orderId ? 'Uploading…' : 'Take photo at the door'}
-                        <input
-                          type="file"
-                          accept="image/*"
-                          capture="environment"
-                          disabled={busy === d.orderId}
-                          onChange={(e) => markDelivered(d.orderId, e.target.files?.[0])}
-                        />
-                      </label>
-                      <p className="field-hint">The photo marks the order delivered. The shop and the buyer can both see it.</p>
+                      {d.status === 'shipped' ? (
+                        <>
+                          <label className={`btn btn-primary btn-lg btn-block${busy === d.orderId ? ' is-disabled' : ''}`}>
+                            <Camera size={18} aria-hidden="true" />
+                            {busy === d.orderId ? 'Uploading…' : 'Take photo at the door'}
+                            <input
+                              type="file"
+                              accept="image/*"
+                              capture="environment"
+                              disabled={busy === d.orderId}
+                              onChange={(e) => markDelivered(d.orderId, e.target.files?.[0])}
+                            />
+                          </label>
+                          <p className="field-hint">The photo marks the order delivered. The shop and the buyer can both see it.</p>
+                        </>
+                      ) : (
+                        <p className="field-hint">The shop has not sent this order out yet. You can take the photo once it is marked out for delivery.</p>
+                      )}
                     </div>
                   )}
                 </div>

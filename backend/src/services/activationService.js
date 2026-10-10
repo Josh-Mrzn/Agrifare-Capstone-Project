@@ -4,6 +4,7 @@ import User from '../models/User.js';
 import { sendMailWithin, isMailConfigured, SEND_TIMEOUT_MS } from '../config/mailer.js';
 import { getAppUrl } from './authService.js';
 import { SEND_COOLDOWN_SECONDS, cooldownError, secondsLeft } from './sendCooldown.js';
+import { escapeHtml } from '../utils/escapeHtml.js';
 
 /**
  * Activating an account somebody else created - a rider's, made by their seller.
@@ -127,7 +128,7 @@ export const activationService = {
     await user.save();
 
     const link = `${getAppUrl()}/activate?token=${token}`;
-    const { subject, html } = activationEmail({ name: user.name, link });
+    const { subject, html } = activationEmail({ name: escapeHtml(user.name), link });
 
     // Saved before sending, so a second tap during the send already sees the
     // cooldown. Delivery is awaited like the codes: a failed send is reported,

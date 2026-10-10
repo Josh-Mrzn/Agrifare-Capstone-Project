@@ -16,10 +16,12 @@ export const updateUserByUserId = async (userId, data) => {
   ).select('-password');
 };
 
-export const updatePasswordByUserId = async (userId, hashedPassword) => {
+export const updatePasswordByUserId = async (userId, hashedPassword, { endSessions = false } = {}) => {
+  const changes = { password: hashedPassword };
+  if (endSessions) changes.passwordChangedAt = new Date();
   return User.findOneAndUpdate(
     { userId },
-    { password: hashedPassword },
+    changes,
     { new: true }
   );
 };

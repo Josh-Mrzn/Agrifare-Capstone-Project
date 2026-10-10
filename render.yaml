@@ -1,0 +1,32 @@
+# Render blueprint for the AgriFair API (https://render.com/docs/blueprint-spec).
+# New > Blueprint > pick this repo. Fill in the secrets Render asks for.
+services:
+  - type: web
+    name: agrifair-api
+    runtime: node
+    rootDir: backend
+    plan: free
+    buildCommand: npm ci --omit=dev
+    startCommand: npm start
+    healthCheckPath: /test
+    envVars:
+      - key: NODE_ENV
+        value: production
+      - key: NODE_VERSION
+        value: "20"
+      - key: JWT_EXPIRES_IN
+        value: 1d
+      - key: JWT_SECRET
+        generateValue: true
+      - key: MONGODB_URI
+        sync: false
+      - key: APP_URL
+        sync: false
+      - key: CORS_ORIGINS
+        sync: false
+      - key: VERCEL_PROJECT
+        sync: false
+      - key: BREVO_API_KEY
+        sync: false
+      - key: MAIL_FROM
+        sync: false

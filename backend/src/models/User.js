@@ -92,6 +92,13 @@ const userSchema = new mongoose.Schema({
   passwordSet: { type: Boolean, default: true },
 
   /**
+   * When the password was last replaced by a reset or by a Super Admin.
+   * Sign-in tokens issued before this are refused, so whoever was signed in
+   * with the old password is signed out by the reset.
+   */
+  passwordChangedAt: { type: Date, default: null },
+
+  /**
    * The link a rider activates their account from.
    *
    * Only a SHA-256 of the token is kept, so a copy of the database cannot be

@@ -10,6 +10,7 @@ import cookieParser from 'cookie-parser';
 import cors from 'cors';
 import chatRoutes from './routes/chatRoutes.js';
 import { findStored, sendStored } from './middleware/multerMiddleware.js';
+import { isVercelOrigin } from './utils/corsOrigins.js';
 
 
 const app = express();
@@ -36,18 +37,6 @@ const isLoopbackOrigin = (origin) =>
 // phone during development can reach the API. Development only, like loopback.
 const isPrivateLanOrigin = (origin) =>
   /^https?:\/\/(10\.\d{1,3}\.\d{1,3}\.\d{1,3}|192\.168\.\d{1,3}\.\d{1,3}|172\.(1[6-9]|2\d|3[01])\.\d{1,3}\.\d{1,3})(:\d+)?$/.test(origin);
-
-// Preview + production Vercel hosts (https://app.vercel.app, https://app-git-main-user.vercel.app).
-const isVercelOrigin = (origin) => {
-  try {
-    const { protocol, hostname } = new URL(origin);
-    return protocol === 'https:' && (
-      hostname === 'vercel.app' || hostname.endsWith('.vercel.app')
-    );
-  } catch {
-    return false;
-  }
-};
 
 export const corsOrigin = (origin, callback) => {
   // Same-origin / curl / mobile apps send no Origin header.
@@ -133,6 +122,12 @@ server.on('error', (err) => {
 
   console.error('❌ Server could not start:', err);
   process.exit(1);
+});
+
+// Last line of defence: a rejected promise nobody awaited is logged, not
+// allowed to take every other user's requests down with the process.
+process.on('unhandledRejection', (reason) => {
+  console.error('[unhandledRejection]', reason);
 });
 
 server.listen(port, () => {

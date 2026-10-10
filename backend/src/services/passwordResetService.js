@@ -1,4 +1,5 @@
 import bcrypt from 'bcryptjs';
+import crypto from 'crypto';
 import jwt from 'jsonwebtoken';
 
 import { authRepository } from '../repositories/authRepository.js';
@@ -7,12 +8,21 @@ import { sendMailWithin, SEND_TIMEOUT_MS } from '../config/mailer.js';
 import { getAppUrl } from './authService.js';
 import { otpService, normalizeEmail, OTP_PURPOSES } from './otpService.js';
 import { claimSendSlot } from './sendCooldown.js';
+import { escapeHtml } from '../utils/escapeHtml.js';
 
 const RESET_TOKEN_TTL = '15m';
 const RESET_TOKEN_PURPOSE = 'password-reset';
 
 const VERIFY_TOKEN_TTL = '24h';
 const VERIFY_TOKEN_PURPOSE = 'verify-email';
+
+/**
+ * A fingerprint of the current password hash. Put in the reset token and
+ * checked on use, so the token stops working the moment the password changes
+ * - including by its own use.
+ */
+const passwordStamp = (user) =>
+  crypto.createHash('sha256').update(String(user.password || '')).digest('base64url').slice(0, 16);
 
 function getJwtSecret() {
   const secret = process.env.JWT_SECRET;
@@ -56,8 +66,11 @@ export const passwordResetService = {
       purpose: OTP_PURPOSES.passwordReset,
     });
 
+    const user = await authRepository.findByEmail(verified.email);
+    if (!user) throw new Error('User not found');
+
     const resetToken = jwt.sign(
-      { purpose: RESET_TOKEN_PURPOSE, email: verified.email },
+      { purpose: RESET_TOKEN_PURPOSE, email: verified.email, pwd: passwordStamp(user) },
       getJwtSecret(),
       { expiresIn: RESET_TOKEN_TTL }
     );
@@ -87,9 +100,12 @@ export const passwordResetService = {
 
     const user = await authRepository.findByEmail(payload.email);
     if (!user) throw new Error('User not found');
+    if (payload.pwd !== passwordStamp(user)) {
+      throw new Error('This reset link was already used. Start again.');
+    }
 
     const hashedPassword = await bcrypt.hash(newPassword, 12);
-    await updatePasswordByUserId(user.userId, hashedPassword);
+    await updatePasswordByUserId(user.userId, hashedPassword, { endSessions: true });
 
     return { message: 'Password updated. You can sign in with your new password.' };
   }
@@ -153,7 +169,7 @@ export const emailVerificationService = {
         <div style="font-family:Segoe UI,Arial,sans-serif;max-width:480px;margin:0 auto;color:#16211b">
           <h2 style="color:#3f6b4c;margin:0 0 8px">Verify your AgriFair email</h2>
           <p style="margin:0 0 20px;color:#4c5b51">
-            Hi ${user.name || 'there'}, confirm this address to finish setting up your seller account.
+            Hi ${escapeHtml(user.name) || 'there'}, confirm this address to finish setting up your seller account.
           </p>
           <p style="margin:0 0 20px;text-align:center">
             <a href="${link}"

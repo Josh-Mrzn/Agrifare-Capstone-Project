@@ -5,6 +5,7 @@ import { otpRepository } from '../repositories/otpRepository.js';
 import { sendMailWithin, isMailConfigured, SEND_TIMEOUT_MS } from '../config/mailer.js';
 import { OTP_TTL_MINUTES, OTP_MAX_ATTEMPTS, OTP_PURPOSES } from '../models/EmailOtp.js';
 import { claimSendSlot, cooldownError, releaseSendSlot, secondsLeft } from './sendCooldown.js';
+import { escapeHtml } from '../utils/escapeHtml.js';
 
 const RESEND_WINDOW_MS = 15 * 60 * 1000;
 const MAX_CODES_PER_WINDOW = 5;
@@ -107,7 +108,7 @@ export const otpService = {
     // timed out there) - and the stored code then held the one-minute
     // cooldown against a code nobody received. A failed send gives the slot
     // back, so the person can try again straight away.
-    const { subject, html } = TEMPLATES[purpose](name, code);
+    const { subject, html } = TEMPLATES[purpose](escapeHtml(name), code);
     try {
       await sendMailWithin(SEND_TIMEOUT_MS, { to: cleanEmail, subject, html });
     } catch (err) {

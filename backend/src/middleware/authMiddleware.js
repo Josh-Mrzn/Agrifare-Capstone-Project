@@ -1,12 +1,14 @@
 import jwt from 'jsonwebtoken';
 import User from '../models/User.js';
 
-function attachUser(req, payload) {
+function attachUser(req, payload, role) {
   req.user = {
     id: payload.userId,
     userId: payload.userId,
     email: payload.email,
-    role: payload.role
+    // From the account, not the token: a demotion takes effect on the next
+    // request instead of when a day-old token finally expires.
+    role,
   };
 }
 
@@ -48,22 +50,28 @@ export const protect = async (req, res, next) => {
   // The token says who, not whether they are still allowed in. A day-long
   // token issued before a suspension would otherwise keep working until it
   // expired, so the account is read on every request.
+  let account;
   try {
-    const account = await User.findOne({ userId: decoded.userId })
-      .select('status')
+    account = await User.findOne({ userId: decoded.userId })
+      .select('status role passwordChangedAt')
       .lean();
-
-    if (!account) {
-      return res.status(401).json({ message: 'User not found' });
-    }
-    if (account.status === 'suspended') {
-      return refuseSuspended(res);
-    }
   } catch (err) {
     return next(err);
   }
 
-  attachUser(req, decoded);
+  if (!account) {
+    return res.status(401).json({ message: 'User not found' });
+  }
+  if (account.status === 'suspended') {
+    return refuseSuspended(res);
+  }
+  // A token from before a password reset belongs to the old password.
+  if (account.passwordChangedAt
+    && decoded.iat < Math.floor(new Date(account.passwordChangedAt).getTime() / 1000)) {
+    return res.status(401).json({ message: 'Your password was changed. Sign in again.' });
+  }
+
+  attachUser(req, decoded, account.role);
   return next();
 };
 

@@ -2,6 +2,7 @@ import * as SuperAdminRepo from '../repositories/superAdminRepository.js';
 import * as orderRepo from '../repositories/orderRepository.js';
 import bcrypt from 'bcryptjs';
 import { toNameKey } from '../models/User.js';
+import { authRepository } from '../repositories/authRepository.js';
 
 export const getAllUsers = async () => {
   return await SuperAdminRepo.findAllUsers();
@@ -62,22 +63,40 @@ export const deleteUser = async (idFromUrl, adminId) => {
 
 // --- CREATE USER ---
 export const createUser = async (userData, adminId) => {
-  const users = await SuperAdminRepo.findAllUsers();
-  const lastUser = users
-    .filter(u => typeof u.userId === 'number')
-    .sort((a, b) => b.userId - a.userId)[0];
-  
-  const nextId = lastUser ? lastUser.userId + 1 : 1;
+  const name = String(userData?.name || '').trim();
+  const email = String(userData?.email || '').trim().toLowerCase();
+  const password = String(userData?.password || '');
 
-  const newUser = await SuperAdminRepo.createUser({
-    ...userData,
-    userId: nextId,
-    status: 'active',
-    // A Super Admin typed this address in for someone they know, so there is
-    // no link to click. Sign-in checks this flag for every account.
-    emailVerified: true,
-  });
-  
+  if (!name || !email) throw new Error('Name and email are required.');
+  if (password.length < 6) throw new Error('Password must be at least 6 characters.');
+
+  // Only the fields the form has. Spreading the body let a request set
+  // anything on the account - verification flags, payout status, employer.
+  let newUser;
+  try {
+    // authRepository picks the next userId and retries if a signup took it
+    // at the same moment, instead of loading every user to find the highest.
+    newUser = await authRepository.createUser({
+      name,
+      email,
+      password,
+      role: userData?.role || 'buyer',
+      contact: String(userData?.contact || '').trim(),
+      status: 'active',
+      // A Super Admin typed this address in for someone they know, so there is
+      // no link to click. Sign-in checks this flag for every account.
+      emailVerified: true,
+    });
+  } catch (err) {
+    if (err?.code === 11000 && 'email' in (err.keyPattern || {})) {
+      throw new Error('Somebody already uses that email.');
+    }
+    throw err;
+  }
+  const nextId = newUser.userId;
+  newUser = newUser.toObject();
+  delete newUser.password;
+
   await SuperAdminRepo.createAuditLog({
     adminId, 
     action: 'CREATE_USER',
@@ -112,6 +131,7 @@ export const updateUser = async (idFromUrl, updateData, adminId) => {
   if (updateData.password) {
     if (String(updateData.password).length < 6) throw new Error('Password must be at least 6 characters.');
     changes.password = await bcrypt.hash(String(updateData.password), 12);
+    changes.passwordChangedAt = new Date();
   }
 
   const user = await SuperAdminRepo.updateUser(idFromUrl, changes);
