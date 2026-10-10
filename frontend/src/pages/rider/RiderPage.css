@@ -1,232 +1,115 @@
-/* The rider's page. Built thumb-first — it is read in a truck, one-handed. */
-
-.rp-root {
-  min-height: 100vh;
-  padding: 0 0 2rem;
-  background: #f4f2ea;
-  color: #23291f;
-  font-size: 15px;
+.rider {
+  min-height: 100dvh;
+  background: var(--bg);
 }
 
-.rp-head {
+.rider-head {
   position: sticky;
   top: 0;
   z-index: 10;
   display: flex;
   align-items: center;
-  justify-content: space-between;
-  gap: 0.75rem;
-  padding: 0.85rem 1rem;
-  background: #16231a;
-  color: #f4f2ea;
+  gap: 4px;
+  height: 60px;
+  padding: 0 8px 0 16px;
+  color: #fff;
+  background: linear-gradient(165deg, var(--g950), var(--g800));
+  box-shadow: 0 6px 18px rgba(18, 33, 18, 0.18);
 }
 
-.rp-brand { display: flex; align-items: center; gap: 0.6rem; }
-.rp-brand span {
-  display: block;
-  font-size: 0.6rem;
-  letter-spacing: 0.13em;
-  opacity: 0.65;
+.rider-head .btn-ghost {
+  color: rgba(255, 255, 255, 0.8);
 }
-.rp-brand strong { font-size: 0.95rem; }
 
-.rp-head-actions { display: flex; gap: 0.3rem; }
+.rider-head .btn-ghost:hover {
+  background: rgba(255, 255, 255, 0.1);
+  color: #fff;
+}
 
-.rp-icon {
-  display: inline-flex;
+.rider-brand {
+  display: flex;
   align-items: center;
-  justify-content: center;
-  width: 36px;
-  height: 36px;
-  border: 0;
-  border-radius: 0.5rem;
-  background: rgba(255, 255, 255, 0.12);
-  color: inherit;
-  cursor: pointer;
+  gap: 10px;
+  flex: 1;
+  min-width: 0;
 }
 
-.rp-error,
-.rp-notice {
-  margin: 0.8rem 1rem 0;
-  padding: 0.6rem 0.8rem;
-  border-radius: 0.6rem;
-  font-size: 0.83rem;
-  line-height: 1.5;
+.rider-brand img {
+  border-radius: 6px;
 }
 
-.rp-error { background: rgba(192, 72, 58, 0.12); color: #8f3125; }
-.rp-notice { background: rgba(47, 107, 69, 0.13); color: #2f6b45; }
-
-.rp-empty {
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  gap: 0.8rem;
-  padding: 4rem 1.5rem;
-  text-align: center;
-  opacity: 0.65;
-}
-
-.rp-empty p { margin: 0; max-width: 30ch; font-size: 0.88rem; }
-
-.rp-list { list-style: none; margin: 0; padding: 1rem; display: grid; gap: 0.9rem; }
-
-.rp-card {
-  padding: 1rem;
-  border-radius: 0.9rem;
-  background: #fdfcf7;
-  box-shadow: 0 2px 10px rgba(18, 33, 18, 0.08);
-}
-
-.rp-card--done { opacity: 0.72; }
-
-.rp-card-head {
-  display: flex;
-  align-items: flex-start;
-  justify-content: space-between;
-  gap: 0.6rem;
-  margin-bottom: 0.85rem;
-}
-
-.rp-card-head strong { display: block; font-size: 0.95rem; }
-.rp-card-head span { font-size: 0.78rem; opacity: 0.7; }
-
-.rp-chip {
-  flex-shrink: 0;
-  padding: 0.2rem 0.5rem;
-  border-radius: 0.4rem;
-  font-size: 0.68rem;
-  font-weight: 700;
-  text-transform: uppercase;
-  letter-spacing: 0.03em;
-  background: rgba(0, 0, 0, 0.07);
-}
-
-.rp-chip--shipped { background: rgba(184, 131, 47, 0.18); color: #8a6d3b; }
-.rp-chip--done { background: rgba(47, 107, 69, 0.15); color: #2f6b45; }
-
-.rp-leg {
-  display: flex;
-  gap: 0.6rem;
-  padding: 0.6rem 0;
-  border-top: 1px solid rgba(0, 0, 0, 0.06);
-}
-
-.rp-leg svg { flex-shrink: 0; margin-top: 0.2rem; opacity: 0.65; }
-.rp-leg > div { min-width: 0; }
-
-.rp-leg span {
-  display: block;
-  font-size: 0.68rem;
-  text-transform: uppercase;
-  letter-spacing: 0.06em;
-  opacity: 0.6;
-}
-
-.rp-leg p { margin: 0.15rem 0 0.3rem; font-size: 0.87rem; line-height: 1.45; }
-
-.rp-leg em {
-  display: block;
-  margin-bottom: 0.3rem;
-  font-style: normal;
-  font-size: 0.75rem;
-  line-height: 1.45;
-  color: #8a6d3b;
-}
-
-.rp-leg a {
-  display: inline-block;
-  margin-right: 0.8rem;
-  font-size: 0.8rem;
-  font-weight: 600;
-  color: #2f6b45;
-}
-
-.rp-call { display: inline-flex !important; align-items: center; gap: 0.25rem; }
-
-.rp-order-note,
-.rp-pay {
-  margin: 0.5rem 0 0;
-  font-size: 0.8rem;
-  line-height: 1.45;
-}
-
-.rp-pay { font-weight: 600; }
-
-.rp-actions {
+.rider-brand div {
   display: grid;
-  gap: 0.5rem;
-  margin-top: 0.9rem;
+  line-height: 1.25;
+  min-width: 0;
 }
 
-/* Big targets: these are pressed with a thumb, standing beside a truck. */
-.rp-btn {
+.rider-brand strong {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.rider-brand span {
+  font-size: 0.6rem;
+  font-weight: 700;
+  letter-spacing: 0.13em;
+  text-transform: uppercase;
+  color: var(--gold-lt);
+}
+
+.rider-brand strong {
+  font-family: var(--font-display);
+}
+
+.rider-main {
+  display: grid;
+  gap: 16px;
+  max-width: 640px;
+  margin: 0 auto;
+  padding: 16px 16px max(24px, env(safe-area-inset-bottom));
+}
+
+.rider-main h1 {
+  font-size: 1.6rem;
+  letter-spacing: -0.02em;
+}
+
+.rider-card h2 {
+  font-size: 16px;
+}
+
+.rider-leg {
+  display: grid;
+  gap: 4px;
+}
+
+.rider-leg-label {
+  color: var(--text-3);
+  font-size: 13px;
+  font-weight: 550;
+}
+
+.rider-links {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px 20px;
+}
+
+.rider-links .link {
   display: inline-flex;
   align-items: center;
-  justify-content: center;
-  gap: 0.4rem;
-  min-height: 46px;
-  padding: 0 0.9rem;
-  border: 1px solid rgba(0, 0, 0, 0.14);
-  border-radius: 0.65rem;
-  background: #fff;
-  color: inherit;
-  font-size: 0.88rem;
-  font-weight: 600;
-  cursor: pointer;
+  gap: 4px;
 }
 
-.rp-btn--primary { background: #2f6b45; border-color: #2f6b45; color: #fff; }
-.rp-btn--busy { opacity: 0.7; }
-
-/* Live sharing pulses, because leaving it on by accident drains a battery. */
-.rp-btn--live {
-  background: rgba(192, 72, 58, 0.12);
-  border-color: rgba(192, 72, 58, 0.5);
-  color: #8f3125;
-  animation: rp-pulse 2s ease-in-out infinite;
+.rider-note {
+  padding: 10px 12px;
+  border-radius: var(--r-control);
+  background: var(--surface-2);
+  font-size: 13.5px;
 }
 
-@keyframes rp-pulse {
-  50% { background: rgba(192, 72, 58, 0.22); }
-}
-
-@media (prefers-reduced-motion: reduce) {
-  .rp-btn--live { animation: none; }
-}
-
-.rp-note {
-  min-height: 42px;
-  padding: 0 0.7rem;
-  border: 1px solid rgba(0, 0, 0, 0.14);
-  border-radius: 0.6rem;
-  font-size: 0.86rem;
-}
-
-.rp-done {
-  display: flex;
-  align-items: center;
-  gap: 0.4rem;
-  margin: 0.8rem 0 0;
-  font-size: 0.83rem;
-  font-weight: 600;
-  color: #2f6b45;
-}
-
-.rp-skeleton {
-  height: 200px;
-  margin: 1rem;
-  border-radius: 0.9rem;
-  background: linear-gradient(90deg, rgba(0, 0, 0, 0.05), rgba(0, 0, 0, 0.09), rgba(0, 0, 0, 0.05));
-  background-size: 200% 100%;
-  animation: rp-shimmer 1.4s ease-in-out infinite;
-}
-
-@keyframes rp-shimmer {
-  0% { background-position: 200% 0; }
-  100% { background-position: -200% 0; }
-}
-
-@media (prefers-reduced-motion: reduce) {
-  .rp-skeleton { animation: none; }
+.rider-actions {
+  display: grid;
+  gap: 12px;
 }

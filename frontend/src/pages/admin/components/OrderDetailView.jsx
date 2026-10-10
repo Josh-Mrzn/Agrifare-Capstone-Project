@@ -1,406 +1,529 @@
 import React, { useEffect, useState } from 'react';
-import {
-  ArrowLeft,
-  User,
-  Package,
-  Receipt,
-  Clock,
-  MapPin,
-  Phone,
-  CheckCircle2,
-  XCircle,
-  ImageIcon,
-} from 'lucide-react';
-import { API_ORIGIN } from '../../../services/authApi';
+import { ArrowLeft } from 'lucide-react';
 import PrivateFileModal from '../../../components/PrivateFileModal';
-import { fetchRiders, assignRider } from '../../../services/riderApi';
+import Modal from '../../../components/Modal';
 import DeliveryMap from './DeliveryMap';
-import './OrderDetailView.css';
+import { fetchRiders, assignRider } from '../../../services/riderApi';
+import {
+  updateOrderStatus,
+  reviewOrderPayment,
+  setOrderCourier,
+  uploadSellerDeliveryProof,
+} from '../../../services/clientApi';
+import { getErrorMessage } from '../../../services/authApi';
+import { peso, formatDateTime, quantityLabel } from '../../../utils/format';
+import { STATUS_LABEL, statusBadge, PAYMENT_LABEL, paymentBadge } from '../orderStatus';
 
-function peso(n) {
-  return `₱${Number(n || 0).toLocaleString('en-PH', { maximumFractionDigits: 2 })}`;
+const BUYER_CONFIRM_DAYS = 3;
+const DAY = 24 * 60 * 60 * 1000;
+
+const isGcash = (method) => /gcash/i.test(method || '');
+
+/**
+ * What happens next on this order, and what (if anything) is in the way.
+ * Mirrors backend/src/services/orderRules.js: the server enforces the same
+ * rules, this only explains them before the seller clicks.
+ */
+function nextStep(order) {
+  const storefront = order.source === 'storefront';
+  const d = order.delivery || {};
+  const hasCarrier = d.riderUserId != null || Boolean(d.courierName && d.courierReference);
+
+  switch (order.status) {
+    case 'pending':
+      if (isGcash(order.paymentMethod) && order.paymentStatus !== 'paid') {
+        return {
+          text: 'Check the GCash payment below first. You can accept the order once the money has arrived.',
+          actions: [{ to: 'confirmed', label: 'Accept order', blocked: true }, { to: 'cancelled', label: 'Decline', ghost: true }],
+        };
+      }
+      return {
+        text: 'Accepting takes the rice out of your stock and tells the buyer.',
+        actions: [{ to: 'confirmed', label: 'Accept order' }, { to: 'cancelled', label: 'Decline', ghost: true }],
+      };
+    case 'confirmed':
+      return {
+        text: 'Pack the rice, then mark it as being prepared.',
+        actions: [{ to: 'processing', label: 'Start preparing' }, { to: 'cancelled', label: 'Cancel order', ghost: true }],
+      };
+    case 'processing':
+      if (storefront && !hasCarrier) {
+        return {
+          text: 'Choose who delivers it under Delivery: one of your riders, or a courier with its tracking number.',
+          actions: [{ to: 'shipped', label: 'Send out', blocked: true }, { to: 'cancelled', label: 'Cancel order', ghost: true }],
+        };
+      }
+      return {
+        text: 'Send it out when it leaves your place. The buyer can follow it on the map.',
+        actions: [{ to: 'shipped', label: 'Send out' }, { to: 'cancelled', label: 'Cancel order', ghost: true }],
+      };
+    case 'shipped':
+      if (storefront) {
+        return {
+          text: d.riderUserId != null
+            ? 'Your rider marks it delivered by taking a photo at the door. If the photo is with you instead, upload it here.'
+            : 'Upload a photo from the door to mark it delivered.',
+          upload: true,
+        };
+      }
+      return { text: 'Mark it delivered once it arrives.', actions: [{ to: 'delivered', label: 'Mark delivered' }] };
+    case 'delivered': {
+      if (!storefront) {
+        return { text: 'Complete the sale to count it in your sales.', actions: [{ to: 'completed', label: 'Complete sale' }] };
+      }
+      const since = d.deliveredAt ? Date.now() - new Date(d.deliveredAt).getTime() : 0;
+      const canClose = since >= BUYER_CONFIRM_DAYS * DAY;
+      const from = d.deliveredAt ? formatDateTime(new Date(new Date(d.deliveredAt).getTime() + BUYER_CONFIRM_DAYS * DAY)) : '';
+      return {
+        text: canClose
+          ? 'The buyer has not confirmed yet. It has been 3 days, so you can complete the sale.'
+          : `Waiting for the buyer to confirm in the app that it arrived. If they do not, you can complete it from ${from}.`,
+        actions: [{ to: 'completed', label: 'Complete sale', blocked: !canClose }],
+      };
+    }
+    case 'completed':
+      return { text: 'Done. This order is counted in your sales.' };
+    case 'cancelled':
+      return { text: `Cancelled${order.statusReason ? `: ${order.statusReason}` : '.'} Any stock it reserved went back to your inventory.` };
+    default:
+      return { text: '' };
+  }
 }
 
-function fullDate(value) {
-  return new Date(value).toLocaleString('en-PH', {
-    month: 'long', day: 'numeric', year: 'numeric',
-    hour: 'numeric', minute: '2-digit',
-  });
-}
-
-const PAYMENT_STATE = {
-  unpaid:     { tone: 'idle', label: 'Unpaid',          text: 'No payment recorded yet.' },
-  proof_sent: { tone: 'warn', label: 'Proof submitted', text: 'The buyer says they paid. Open your GCash and check before confirming.' },
-  paid:       { tone: 'good', label: 'Paid',            text: 'You confirmed this money arrived.' },
-  rejected:   { tone: 'bad',  label: 'Not received',    text: 'You checked and the payment was not there.' },
-};
-
-export default function OrderDetailView({
-  order,
-  statusLabel,
-  statusHint,
-  nextStatuses,
-  actionLabel,
-  actionNote,
-  busy,
-  onClose,
-  onTransition,
-  onReviewPayment,
-}) {
-  const [proofOpen, setProofOpen] = useState(false);
-  const [riders, setRiders] = useState([]);
-  const [assigning, setAssigning] = useState(false);
-  const [assignError, setAssignError] = useState('');
-  const [assignedTo, setAssignedTo] = useState(order.delivery?.riderUserId ?? '');
-  const [deliveryProofOpen, setDeliveryProofOpen] = useState(false);
+export default function OrderDetailView({ order, onBack, onChanged }) {
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState('');
+  const [cancelling, setCancelling] = useState(false);
+  const [viewing, setViewing] = useState(null);
 
   useEffect(() => {
-    let cancelled = false;
-    fetchRiders()
-      .then((res) => {
-        if (!cancelled) setRiders(Array.isArray(res.data) ? res.data : []);
-      })
-      .catch(() => {
-        // No delivery people is a normal state, not an error worth shouting
-        // about on an order screen.
-      });
-    return () => {
-      cancelled = true;
-    };
+    window.scrollTo({ top: 0 });
   }, []);
 
-  async function assignTo(value) {
-    setAssigning(true);
-    setAssignError('');
+  async function act(fn, fallback) {
+    setBusy(true);
+    setError('');
     try {
-      await assignRider(order._id, value === '' ? null : Number(value));
-      setAssignedTo(value);
+      await fn();
+      await onChanged();
     } catch (err) {
-      setAssignError(err.response?.data?.error || 'Could not assign that person.');
+      setError(getErrorMessage(err, fallback));
     } finally {
-      setAssigning(false);
+      setBusy(false);
     }
   }
-  const [rejecting, setRejecting] = useState(false);
-  const [rejectNote, setRejectNote] = useState('');
 
-  // Escape closes the workspace; the page behind it stays put.
-  useEffect(() => {
-    const onKey = (e) => { if (e.key === 'Escape') onClose(); };
-    document.addEventListener('keydown', onKey);
-    const prev = document.body.style.overflow;
-    document.body.style.overflow = 'hidden';
-    return () => {
-      document.removeEventListener('keydown', onKey);
-      document.body.style.overflow = prev;
-    };
-  }, [onClose]);
-
-  const actions = nextStatuses[order.status] || [];
-  const notes = actions.filter((n) => actionNote[n]);
-  const pay = PAYMENT_STATE[order.paymentStatus] || PAYMENT_STATE.unpaid;
-  const awaitingReview = order.paymentStatus === 'proof_sent';
+  const step = nextStep(order);
+  const storefront = order.source === 'storefront';
 
   return (
-    <div
-      className="odv-overlay"
-      role="dialog"
-      aria-modal="true"
-      aria-label={`Order ${order.orderNumber}`}
-    >
-      <header className="odv-topbar">
-        <button
-          type="button"
-          className="odv-back"
-          onClick={onClose}
-          aria-label="Back to orders"
-          title="Back to orders"
-        >
-          <ArrowLeft size={22} strokeWidth={2.2} />
+    <div className="detail">
+      <div className="detail-head">
+        <button type="button" className="btn btn-ghost btn-sm" onClick={onBack}>
+          <ArrowLeft size={16} aria-hidden="true" /> Orders
         </button>
-
-        <div className="odv-topbar-title">
-          <span className="odv-eyebrow">Order</span>
-          <span className="odv-number">{order.orderNumber}</span>
+        <div className="detail-title">
+          <h2>{order.orderNumber}</h2>
+          <span className={statusBadge(order.status)}>{STATUS_LABEL[order.status] || order.status}</span>
         </div>
-
-        <div className="odv-spacer" />
-
-        <span className={`ap-badge ap-badge-${order.status}`}>
-          {statusLabel[order.status] || order.status}
-        </span>
-      </header>
-
-      <div className="odv-body">
-        <div className="odv-grid">
-          {/* ---------- Left: what this order is ---------- */}
-          <div className="odv-main">
-            <section className="odv-card odv-stage">
-              <p className="odv-stage-text">{statusHint[order.status]}</p>
-              <span className="odv-stage-date">Placed {fullDate(order.orderDate)}</span>
-            </section>
-
-            <section className="odv-card">
-              <h3><User size={16} strokeWidth={2.2} /> Buyer</h3>
-              <div className="odv-card-body">
-                <p className="odv-buyer-name">{order.customerName}</p>
-                {order.customerContact && (
-                  <p className="odv-line"><Phone size={14} strokeWidth={2.2} />{order.customerContact}</p>
-                )}
-                {order.deliveryAddress && (
-                  <p className="odv-line"><MapPin size={14} strokeWidth={2.2} />{order.deliveryAddress}</p>
-                )}
-                {!order.customerContact && !order.deliveryAddress && (
-                  <p className="odv-muted">No contact or address recorded.</p>
-                )}
-              </div>
-            </section>
-
-            <section className="odv-card">
-              <h3><Package size={16} strokeWidth={2.2} /> Items</h3>
-              <div className="odv-card-body">
-                <div className="odv-item">
-                  <div>
-                    <span className="odv-item-name">{order.productName}</span>
-                    <span className="odv-item-qty">{order.quantity} kg</span>
-                  </div>
-                  <span className="odv-item-amount">
-                    {peso(order.subtotal ?? order.total)}
-                  </span>
-                </div>
-              </div>
-            </section>
-
-            {['shipped', 'delivered'].includes(order.status) && (
-              <DeliveryMap
-                orderId={order._id}
-                orderNumber={order.orderNumber}
-                canUpdate={order.status === 'shipped'}
-              />
-            )}
-
-            {order.statusHistory?.length > 0 && (
-              <section className="odv-card">
-                <h3><Clock size={16} strokeWidth={2.2} /> Timeline</h3>
-                <div className="odv-card-body">
-                  <ul className="odv-timeline">
-                    {order.statusHistory.map((h, i) => (
-                      <li key={`${h.status}-${i}`}>
-                        <strong>{statusLabel[h.status] || h.status}</strong>
-                        <span>{fullDate(h.changedAt)}</span>
-                        {h.reason && <em>{h.reason}</em>}
-                      </li>
-                    ))}
-                  </ul>
-                </div>
-              </section>
-            )}
-          </div>
-
-          {/* ---------- Right: money and next step ---------- */}
-          <aside className="odv-side">
-            <section className="odv-card">
-              <h3><Receipt size={16} strokeWidth={2.2} /> Payment</h3>
-              <div className="odv-card-body">
-                <div className="odv-row">
-                  <span>Subtotal</span>
-                  <span>{peso(order.subtotal ?? order.total)}</span>
-                </div>
-                <div className="odv-row">
-                  <span>Delivery fee</span>
-                  <span>{peso(order.deliveryFee || 0)}</span>
-                </div>
-                <div className="odv-row odv-row-total">
-                  <span>Total</span>
-                  <span>{peso(order.total)}</span>
-                </div>
-                <div className="odv-row odv-row-method">
-                  <span>Method</span>
-                  <span>{order.paymentMethod || 'Cash/COD'}</span>
-                </div>
-
-                <div className={`odv-pay-state odv-pay-state--${pay.tone}`}>
-                  <strong>{pay.label}</strong>
-                  <span>{pay.text}</span>
-                </div>
-
-                {order.paymentStatus === 'paid' && order.paidAt && (
-                  <p className="odv-note">
-                    {peso(order.amountPaid)} confirmed on {fullDate(order.paidAt)}.
-                  </p>
-                )}
-
-                {order.paymentNote && (
-                  <p className="odv-note">Note: {order.paymentNote}</p>
-                )}
-
-                {order.paymentProof && (
-                  <button
-                    className="odv-proof"
-                    type="button"
-                    onClick={() => setProofOpen(true)}
-                  >
-                    <ImageIcon size={15} strokeWidth={2.2} />
-                    View the buyer&apos;s proof of payment
-                  </button>
-                )}
-
-                {awaitingReview && !rejecting && (
-                  <>
-                    <p className="odv-note odv-note-strong">
-                      Check your own GCash app first. Only confirm if the money is
-                      really there — a screenshot can be edited.
-                    </p>
-                    <div className="odv-actions">
-                      <button
-                        type="button"
-                        className="ap-btn-primary"
-                        disabled={busy}
-                        onClick={() => onReviewPayment(order, { paid: true })}
-                      >
-                        <CheckCircle2 size={15} strokeWidth={2.3} />
-                        I received it
-                      </button>
-                      <button
-                        type="button"
-                        className="ap-btn-ghost"
-                        disabled={busy}
-                        onClick={() => setRejecting(true)}
-                      >
-                        <XCircle size={15} strokeWidth={2.3} />
-                        Not received
-                      </button>
-                    </div>
-                  </>
-                )}
-
-                {awaitingReview && rejecting && (
-                  <div className="odv-reject">
-                    <label htmlFor="odv-reject-note">Tell the buyer what was wrong</label>
-                    <input
-                      id="odv-reject-note"
-                      type="text"
-                      value={rejectNote}
-                      onChange={(e) => setRejectNote(e.target.value)}
-                      placeholder="e.g. Nothing arrived in my GCash"
-                    />
-                    <div className="odv-actions">
-                      <button
-                        type="button"
-                        className="ap-btn-ghost"
-                        onClick={() => { setRejecting(false); setRejectNote(''); }}
-                      >
-                        Never mind
-                      </button>
-                      <button
-                        type="button"
-                        className="ap-btn-primary"
-                        disabled={busy || !rejectNote.trim()}
-                        onClick={() => onReviewPayment(order, { paid: false, note: rejectNote.trim() })}
-                      >
-                        Mark as not received
-                      </button>
-                    </div>
-                  </div>
-                )}
-              </div>
-            </section>
-
-            <section className="odv-card">
-              <h3>Delivery person</h3>
-              <div className="odv-card-body">
-                {riders.length === 0 ? (
-                  <p className="odv-muted">
-                    You have no delivery people yet. Add one under Delivery, and
-                    they will appear here.
-                  </p>
-                ) : (
-                  <>
-                    <select
-                      className="odv-assign"
-                      value={assignedTo}
-                      disabled={assigning}
-                      onChange={(e) => assignTo(e.target.value)}
-                    >
-                      <option value="">Nobody assigned</option>
-                      {riders
-                        .filter((r) => r.status !== 'suspended')
-                        .map((r) => (
-                          <option key={r.userId} value={r.userId}>
-                            {r.name}
-                            {r.activated ? '' : ' — has not signed in yet'}
-                          </option>
-                        ))}
-                    </select>
-                    <p className="odv-note">
-                      Assigning is what lets them see this order and share the
-                      truck&apos;s position. They see nothing else of yours.
-                    </p>
-                  </>
-                )}
-                {assignError && <p className="ap-form-error">{assignError}</p>}
-
-                {order.delivery?.proofOfDelivery && (
-                  <button
-                    className="odv-proof"
-                    type="button"
-                    onClick={() => setDeliveryProofOpen(true)}
-                  >
-                    <ImageIcon size={15} strokeWidth={2.2} />
-                    View proof of delivery
-                  </button>
-                )}
-              </div>
-            </section>
-
-            <section className="odv-card">
-              <h3>Next step</h3>
-              <div className="odv-card-body">
-                {actions.length === 0 ? (
-                  <p className="odv-muted">
-                    This order is {statusLabel[order.status]?.toLowerCase()} — nothing left to do.
-                  </p>
-                ) : (
-                  <>
-                    <div className="odv-actions">
-                      {actions.map((next) => (
-                        <button
-                          key={next}
-                          type="button"
-                          className={next === 'cancelled' ? 'ap-btn-ghost' : 'ap-btn-primary'}
-                          disabled={busy}
-                          onClick={() => onTransition(order, next)}
-                        >
-                          {actionLabel[next] || `Mark as ${statusLabel[next]}`}
-                        </button>
-                      ))}
-                    </div>
-                    {notes.map((next) => (
-                      <p className="odv-note" key={`note-${next}`}>{actionNote[next]}</p>
-                    ))}
-                  </>
-                )}
-              </div>
-            </section>
-          </aside>
-        </div>
+        <p className="muted">
+          Placed {formatDateTime(order.orderDate)}
+          {storefront ? ' in the app' : ', recorded by you'}
+        </p>
       </div>
 
-      {proofOpen && (
-        <PrivateFileModal
-          path={order.paymentProof}
-          title={`Proof of payment — ${order.orderNumber}`}
-          onClose={() => setProofOpen(false)}
+      <div className="live" aria-live="polite">{error && <p className="alert alert-danger">{error}</p>}</div>
+
+      <div className="detail-grid">
+        <div className="stack">
+          <section className="panel order-next">
+            <div className="panel-head"><h3>Next step</h3></div>
+            <div className="panel-body stack">
+              <p>{step.text}</p>
+              {step.actions && (
+                <div className="form-actions order-actions">
+                  {step.actions.map((a) => (
+                    <button
+                      key={a.to}
+                      type="button"
+                      className={`btn ${a.ghost ? 'btn-secondary' : 'btn-primary'}`}
+                      disabled={busy || a.blocked}
+                      onClick={() => (a.to === 'cancelled'
+                        ? setCancelling(true)
+                        : act(() => updateOrderStatus(order._id, a.to), 'Could not update the order.'))}
+                    >
+                      {a.label}
+                    </button>
+                  ))}
+                </div>
+              )}
+              {step.upload && <DeliveryPhotoUpload order={order} busy={busy} act={act} />}
+            </div>
+          </section>
+
+          <section className="panel">
+            <div className="panel-head"><h3>Rice</h3></div>
+            <div className="panel-body">
+              <div className="line-item">
+                <span className="cell-main">
+                  <strong>{order.productName}</strong>
+                  <span>{quantityLabel(order)} at {peso(order.unitPrice)}{order.weightKg > 1 ? ' a sack' : ' a kilo'}</span>
+                </span>
+                <span className="num">{peso(order.subtotal ?? order.total)}</span>
+              </div>
+              {order.notes && <p className="order-note">Buyer&rsquo;s note: {order.notes}</p>}
+            </div>
+          </section>
+
+          <DeliverySection order={order} busy={busy} act={act} onView={setViewing} />
+
+          {['shipped', 'delivered'].includes(order.status) && (
+            <DeliveryMap orderId={order._id} canUpdate={order.status === 'shipped'} />
+          )}
+
+          <History order={order} />
+        </div>
+
+        <PaymentSection order={order} busy={busy} act={act} onView={setViewing} />
+      </div>
+
+      {cancelling && (
+        <CancelDialog
+          order={order}
+          onClose={() => setCancelling(false)}
+          onConfirm={(reason) => act(async () => {
+            await updateOrderStatus(order._id, 'cancelled', reason);
+            setCancelling(false);
+          }, 'Could not cancel this order.')}
+          busy={busy}
         />
       )}
 
-      {deliveryProofOpen && (
-        <PrivateFileModal
-          path={order.delivery.proofOfDelivery}
-          title={`Proof of delivery — ${order.orderNumber}`}
-          onClose={() => setDeliveryProofOpen(false)}
-        />
-      )}
+      {viewing && <PrivateFileModal path={viewing.path} title={viewing.title} onClose={() => setViewing(null)} />}
     </div>
+  );
+}
+
+function DeliveryPhotoUpload({ order, busy, act }) {
+  const [note, setNote] = useState('');
+  return (
+    <div className="form-grid">
+      <label className="field">
+        <span className="field-label">Who received it? <span className="optional">(optional)</span></span>
+        <input className="input" value={note} onChange={(e) => setNote(e.target.value)} autoComplete="off" />
+      </label>
+      <div>
+        <label className={`btn btn-primary${busy ? ' is-disabled' : ''}`}>
+          {busy ? 'Uploading…' : 'Upload delivery photo'}
+          <input
+            type="file"
+            accept="image/jpeg,image/png,image/webp"
+            capture="environment"
+            hidden
+            disabled={busy}
+            onChange={(e) => {
+              const file = e.target.files?.[0];
+              e.target.value = '';
+              if (file) act(() => uploadSellerDeliveryProof(order._id, file, note), 'Could not upload the photo.');
+            }}
+          />
+        </label>
+      </div>
+    </div>
+  );
+}
+
+function DeliverySection({ order, busy, act, onView }) {
+  const d = order.delivery || {};
+  const open = !['delivered', 'completed', 'cancelled'].includes(order.status);
+  const [riders, setRiders] = useState([]);
+  const [mode, setMode] = useState(d.courierName && d.riderUserId == null ? 'courier' : 'rider');
+  const [courier, setCourier] = useState({
+    courierName: d.riderUserId == null ? d.courierName || '' : '',
+    courierContact: d.riderUserId == null ? d.courierContact || '' : '',
+    courierReference: d.courierReference || '',
+  });
+
+  useEffect(() => {
+    if (!open || order.source !== 'storefront') return;
+    fetchRiders()
+      .then((res) => setRiders(Array.isArray(res.data) ? res.data.filter((r) => r.status !== 'suspended') : []))
+      .catch(() => setRiders([]));
+  }, [open, order.source]);
+
+  const setC = (key) => (e) => setCourier((c) => ({ ...c, [key]: e.target.value }));
+  const carrier = d.riderUserId != null
+    ? `${d.courierName || 'Your rider'} (your rider)`
+    : d.courierName
+      ? `${d.courierName}${d.courierReference ? `, tracking ${d.courierReference}` : ''}`
+      : '';
+
+  return (
+    <section className="panel">
+      <div className="panel-head"><h3>Delivery</h3></div>
+      <div className="panel-body stack">
+        <dl className="dl">
+          <div><dt>Deliver to</dt><dd>{order.customerName}</dd></div>
+          {order.customerContact && (
+            <div><dt>Mobile</dt><dd><a className="link" href={`tel:${order.customerContact}`}>{order.customerContact}</a></dd></div>
+          )}
+          {order.deliveryAddress && <div><dt>Address</dt><dd>{order.deliveryAddress}</dd></div>}
+          <div><dt>Carried by</dt><dd>{carrier || <span className="muted">Not chosen yet</span>}</dd></div>
+          {d.deliveredAt && <div><dt>Delivered</dt><dd>{formatDateTime(d.deliveredAt)}{d.deliveryNote ? `, ${d.deliveryNote}` : ''}</dd></div>}
+        </dl>
+
+        {d.proofOfDelivery && (
+          <div>
+            <button type="button" className="btn btn-secondary btn-sm" onClick={() => onView({ path: d.proofOfDelivery, title: `Delivery photo, ${order.orderNumber}` })}>
+              View delivery photo
+            </button>
+          </div>
+        )}
+
+        {open && order.source === 'storefront' && (
+          <div className="carrier">
+            <div className="tabs" role="tablist" aria-label="Who delivers">
+              <button type="button" role="tab" className="tab" aria-selected={mode === 'rider'} onClick={() => setMode('rider')}>Your rider</button>
+              <button type="button" role="tab" className="tab" aria-selected={mode === 'courier'} onClick={() => setMode('courier')}>Courier</button>
+            </div>
+
+            {mode === 'rider' && (
+              riders.length === 0 ? (
+                <p className="muted">You have no delivery people yet. Add one under Delivery.</p>
+              ) : (
+                <label className="field">
+                  <span className="field-label">Rider</span>
+                  <select
+                    className="select"
+                    value={d.riderUserId ?? ''}
+                    disabled={busy}
+                    onChange={(e) => act(
+                      () => assignRider(order._id, e.target.value === '' ? null : Number(e.target.value)),
+                      'Could not assign that rider.',
+                    )}
+                  >
+                    <option value="">Nobody yet</option>
+                    {riders.map((r) => (
+                      <option key={r.userId} value={r.userId}>
+                        {r.name}{r.activated ? '' : ' (not signed in yet)'}
+                      </option>
+                    ))}
+                  </select>
+                  <span className="field-hint">The rider sees only the orders you assign to them.</span>
+                </label>
+              )
+            )}
+
+            {mode === 'courier' && (
+              <form
+                className="form-grid"
+                onSubmit={(e) => {
+                  e.preventDefault();
+                  act(() => setOrderCourier(order._id, courier), 'Could not save the courier.');
+                }}
+              >
+                <div className="form-grid-3">
+                  <label className="field">
+                    <span className="field-label">Courier</span>
+                    <input className="input" value={courier.courierName} onChange={setC('courierName')} placeholder="LBC, J&T, Lalamove…" autoComplete="off" />
+                  </label>
+                  <label className="field">
+                    <span className="field-label">Tracking or booking no.</span>
+                    <input className="input" value={courier.courierReference} onChange={setC('courierReference')} autoComplete="off" spellCheck={false} />
+                  </label>
+                  <label className="field">
+                    <span className="field-label">Driver&rsquo;s mobile <span className="optional">(optional)</span></span>
+                    <input className="input" type="tel" inputMode="tel" value={courier.courierContact} onChange={setC('courierContact')} autoComplete="off" />
+                  </label>
+                </div>
+                <div>
+                  <button type="submit" className="btn btn-secondary" disabled={busy}>Save courier</button>
+                </div>
+              </form>
+            )}
+          </div>
+        )}
+      </div>
+    </section>
+  );
+}
+
+function PaymentSection({ order, busy, act, onView }) {
+  const [reference, setReference] = useState(order.paymentReference || '');
+  const [amount, setAmount] = useState('');
+  const [note, setNote] = useState('');
+  const [rejecting, setRejecting] = useState(false);
+
+  const gcash = isGcash(order.paymentMethod);
+  // GCash: once there is a receipt to check. Cash: once the rice is on its
+  // way, which is when the money is actually handed over.
+  const canReview = order.status !== 'cancelled' && order.paymentStatus !== 'paid'
+    && (gcash ? Boolean(order.paymentProof) : ['shipped', 'delivered', 'completed'].includes(order.status));
+  const history = order.paymentHistory || [];
+
+  const markPaid = (e) => {
+    e.preventDefault();
+    act(() => reviewOrderPayment(order._id, {
+      paid: true,
+      reference,
+      amount: amount === '' ? undefined : Number(amount),
+      note,
+    }), 'Could not record the payment.');
+  };
+
+  return (
+    <aside className="stack">
+      <section className="panel">
+        <div className="panel-head">
+          <h3>Payment</h3>
+          <span className={paymentBadge(order.paymentStatus)}>{PAYMENT_LABEL[order.paymentStatus] || 'Unpaid'}</span>
+        </div>
+        <div className="panel-body stack">
+          <dl className="dl totals">
+            <div><dt>Rice</dt><dd className="num">{peso(order.subtotal ?? order.total)}</dd></div>
+            <div><dt>Delivery</dt><dd className="num">{peso(order.deliveryFee || 0)}</dd></div>
+            <div className="totals-sum"><dt>Total</dt><dd className="num">{peso(order.total)}</dd></div>
+            <div><dt>Method</dt><dd>{order.paymentMethod === 'Cash/COD' ? 'Cash on delivery' : order.paymentMethod}</dd></div>
+            {order.paymentReference && <div><dt>Reference</dt><dd className="num">{order.paymentReference}</dd></div>}
+            {order.paymentStatus === 'paid' && (
+              <div><dt>Received</dt><dd>{peso(order.amountPaid)} on {formatDateTime(order.paidAt)}</dd></div>
+            )}
+          </dl>
+
+          {order.paymentProof && (
+            <div>
+              <button type="button" className="btn btn-secondary btn-sm" onClick={() => onView({ path: order.paymentProof, title: `GCash receipt, ${order.orderNumber}` })}>
+                View GCash receipt
+              </button>
+            </div>
+          )}
+
+          {order.paymentStatus === 'rejected' && order.paymentNote && (
+            <p className="alert alert-danger">Marked not received: {order.paymentNote}</p>
+          )}
+
+          {canReview && !rejecting && (
+            <form className="form-grid" onSubmit={markPaid}>
+              {gcash && (
+                <p className="alert alert-warning">
+                  Open your own GCash app and find this transfer before confirming. A screenshot can be edited.
+                </p>
+              )}
+              <label className="field">
+                <span className="field-label">{gcash ? 'GCash reference no.' : 'Reference'} {!gcash && <span className="optional">(optional)</span>}</span>
+                <input className="input num" value={reference} onChange={(e) => setReference(e.target.value)} inputMode={gcash ? 'numeric' : undefined} autoComplete="off" spellCheck={false} />
+              </label>
+              <label className="field">
+                <span className="field-label">Amount received (₱)</span>
+                <input
+                  className="input"
+                  type="number"
+                  inputMode="decimal"
+                  min="0"
+                  step="0.01"
+                  value={amount}
+                  onChange={(e) => setAmount(e.target.value)}
+                  placeholder={String(order.total)}
+                />
+                <span className="field-hint">Leave empty if it is the full amount.</span>
+              </label>
+              {amount !== '' && Number(amount) < Number(order.total) && (
+                <label className="field">
+                  <span className="field-label">Why is it less?</span>
+                  <input className="input" value={note} onChange={(e) => setNote(e.target.value)} autoComplete="off" />
+                </label>
+              )}
+              <div className="form-actions">
+                <button type="button" className="btn btn-secondary" disabled={busy} onClick={() => setRejecting(true)}>Not received</button>
+                <button type="submit" className="btn btn-primary" disabled={busy}>Mark as paid</button>
+              </div>
+            </form>
+          )}
+
+          {rejecting && (
+            <form
+              className="form-grid"
+              onSubmit={(e) => {
+                e.preventDefault();
+                act(() => reviewOrderPayment(order._id, { paid: false, note }), 'Could not record that.');
+              }}
+            >
+              <label className="field">
+                <span className="field-label">Tell the buyer what was wrong</span>
+                <input className="input" value={note} onChange={(e) => setNote(e.target.value)} placeholder="Nothing arrived in my GCash…" autoComplete="off" />
+              </label>
+              <div className="form-actions">
+                <button type="button" className="btn btn-secondary" onClick={() => setRejecting(false)}>Back</button>
+                <button type="submit" className="btn btn-danger" disabled={busy || !note.trim()}>Mark not received</button>
+              </div>
+            </form>
+          )}
+        </div>
+      </section>
+
+      {history.length > 0 && (
+        <section className="panel">
+          <div className="panel-head"><h3>Payment checks</h3></div>
+          <ul className="list">
+            {history.map((h, i) => (
+              <li key={i} className="list-row">
+                <span className="list-row-main">
+                  <strong>{h.status === 'paid' ? `Transfer of ${peso(h.amount)} confirmed` : 'Marked not received'}</strong>
+                  <span>
+                    {formatDateTime(h.at)}
+                    {h.reference ? `, ref ${h.reference}` : ''}
+                    {h.note ? `, ${h.note}` : ''}
+                  </span>
+                </span>
+              </li>
+            ))}
+          </ul>
+        </section>
+      )}
+    </aside>
+  );
+}
+
+function History({ order }) {
+  if (!order.statusHistory?.length) return null;
+  return (
+    <section className="panel">
+      <div className="panel-head"><h3>History</h3></div>
+      <ol className="timeline">
+        {[...order.statusHistory].reverse().map((h, i) => (
+          <li key={`${h.status}-${i}`}>
+            <strong>{STATUS_LABEL[h.status] || h.status}</strong>
+            <span className="muted">{formatDateTime(h.changedAt)}</span>
+            {h.reason && <span>{h.reason}</span>}
+          </li>
+        ))}
+      </ol>
+    </section>
+  );
+}
+
+function CancelDialog({ order, onClose, onConfirm, busy }) {
+  const [reason, setReason] = useState('');
+  return (
+    <Modal title={`Cancel ${order.orderNumber}?`} onClose={onClose}>
+      <form
+        onSubmit={(e) => {
+          e.preventDefault();
+          if (reason.trim()) onConfirm(reason.trim());
+        }}
+      >
+        <div className="modal-body">
+          <p>The buyer sees your reason in the app. Any stock this order reserved goes back to your inventory.</p>
+          <label className="field">
+            <span className="field-label">Reason</span>
+            <input className="input" value={reason} onChange={(e) => setReason(e.target.value)} placeholder="Sold out of this variety…" autoComplete="off" />
+          </label>
+        </div>
+        <div className="modal-actions">
+          <button type="button" className="btn btn-secondary" onClick={onClose}>Keep order</button>
+          <button type="submit" className="btn btn-danger" disabled={busy || !reason.trim()}>Cancel order</button>
+        </div>
+      </form>
+    </Modal>
   );
 }

@@ -1,495 +1,156 @@
+import React, { useCallback, useEffect, useState } from 'react';
+import { X, ImagePlus } from 'lucide-react';
+import { fetchMe, updateAccount } from '../../../services/userApi';
+import { API_ORIGIN, getErrorMessage } from '../../../services/authApi';
+import PrivateImage from '../../../components/PrivateImage';
 import {
-  X, QrCode, ShieldCheck, Clock, AlertCircle, Upload,
-  UserCog, Sprout, Wallet, MapPin, KeyRound, Bell, BadgeCheck,
-  FileCheck, ShieldAlert, Eye,
-} from 'lucide-react';
-import React, { useEffect, useState } from 'react';
-import { fetchMe, updateAccount, changePassword, fetchLoginHistory } from '../../../services/userApi';
-import { API_ORIGIN } from '../../../services/authApi';
+  ProfileForm, PasswordForm, NotificationsForm, SignInHistory, FormStatus,
+} from '../../../components/account/AccountForms';
+import { initialsOf, formatDate } from '../../../utils/format';
 
-const SUB_TABS = [
-  { id: 'Profile',       icon: UserCog,    hint: 'Name and contact' },
-  { id: 'Business',      icon: Sprout,     hint: 'Type, name, and farm' },
-  { id: 'Documents',     icon: FileCheck,  hint: 'Permits and registration' },
-  { id: 'Payment',       icon: Wallet,     hint: 'How you get paid' },
-  { id: 'Addresses',     icon: MapPin,     hint: 'Pickup and dispatch' },
-  { id: 'Security',      icon: KeyRound,   hint: 'Password' },
-  { id: 'Notifications', icon: Bell,       hint: 'What alerts you' },
+const SECTIONS = [
+  { id: 'profile', label: 'Profile' },
+  { id: 'business', label: 'Business' },
+  { id: 'documents', label: 'Documents' },
+  { id: 'payment', label: 'GCash' },
+  { id: 'delivery', label: 'Pickup and delivery' },
+  { id: 'security', label: 'Password and sign-ins' },
+  { id: 'alerts', label: 'Notifications' },
 ];
 
-const SELLER_TYPES = [
-  { id: 'farmer',      label: 'Farmer — I grow the rice I sell',        hint: 'You will be asked for your farm details below.' },
-  { id: 'cooperative', label: 'Cooperative — we farm as a group',        hint: 'Register under the cooperative name.' },
-  { id: 'trader',      label: 'Trader — I buy and resell in bulk',       hint: 'No farm needed; your permits are what matter.' },
-  { id: 'retailer',    label: 'Retailer — I sell from a shop or stall',  hint: 'No farm needed; your permits are what matter.' },
-];
-
-const PAYOUT_CHIP = {
-  unset:    { tone: 'idle', label: 'Payment not set up' },
-  pending:  { tone: 'warn', label: 'Payment under review' },
-  verified: { tone: 'good', label: 'Payment verified' },
-  rejected: { tone: 'bad',  label: 'Payment rejected' },
+const PAYOUT = {
+  unset: { tone: '', label: 'GCash not set up', text: 'Not set up yet. Buyers can only pay you cash on delivery.' },
+  pending: { tone: 'warning', label: 'GCash under review', text: 'Waiting for the AgriFair team to check it. Cash on delivery still works meanwhile.' },
+  verified: { tone: 'success', label: 'GCash verified', text: 'Verified. Buyers can pay you by GCash.' },
+  rejected: { tone: 'danger', label: 'GCash not approved', text: 'Not approved. Fix the details below and save again.' },
 };
 
 export default function AccountInfoTab() {
-  const [sub, setSub] = useState('Profile');
+  const [section, setSection] = useState('profile');
   const [me, setMe] = useState(null);
-  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState('');
 
-  const load = async () => {
+  const load = useCallback(async () => {
     try {
       const res = await fetchMe();
       setMe(res.data);
-    } catch {
-      setMe(null);
-    } finally {
-      setLoading(false);
+    } catch (err) {
+      setError(getErrorMessage(err, 'Could not load your account.'));
     }
-  };
-
-  useEffect(() => {
-    let mounted = true;
-    (async () => { if (mounted) await load(); })();
-    return () => { mounted = false; };
   }, []);
 
-  if (loading) return <div className="ap-tab-content"><p className="ap-empty-state">Loading account info…</p></div>;
-  if (!me) return <div className="ap-tab-content"><p className="ap-empty-state">Could not load your account.</p></div>;
+  useEffect(() => {
+    // load() sets state only after its await, which this rule cannot see.
+    // eslint-disable-next-line react-hooks/set-state-in-effect
+    load();
+  }, [load]);
 
-  const initials = (me.name || me.email || '?').trim().split(/\s+/).slice(0, 2)
-    .map((w) => w[0]).join('').toUpperCase();
-  const chip = PAYOUT_CHIP[me.payout?.status] || PAYOUT_CHIP.unset;
-  const joined = me.createdAt
-    ? new Date(me.createdAt).toLocaleDateString('en-PH', { month: 'long', year: 'numeric' })
-    : null;
+  if (error) return <p className="alert alert-danger">{error}</p>;
+  if (!me) return <div className="skeleton" style={{ height: 320 }} />;
 
-  return (
-    <div className="ap-account">
-      {/* ---------- Identity banner ---------- */}
-      <section className="ap-acct-hero">
-        <div className="ap-acct-hero-glow" aria-hidden="true" />
-        <div className="ap-acct-avatar">
-          {me.avatarUrl ? <img src={`${API_ORIGIN}${me.avatarUrl}`} alt="" /> : <span>{initials}</span>}
-        </div>
-        <div className="ap-acct-identity">
-          <h2>{me.name || 'Unnamed seller'}</h2>
-          <p>{me.email}</p>
-          <div className="ap-acct-chips">
-            <span className="ap-acct-chip ap-acct-chip--role">
-              <BadgeCheck size={13} strokeWidth={2.4} /> Seller
-            </span>
-            <span className={`ap-acct-chip ap-acct-chip--${chip.tone}`}>{chip.label}</span>
-            {joined && <span className="ap-acct-chip">Since {joined}</span>}
-          </div>
-        </div>
-        {me.sellerProfile?.farmName && (
-          <div className="ap-acct-farm">
-            <span>Farm</span>
-            <strong>{me.sellerProfile.farmName}</strong>
-            {me.sellerProfile.farmLocation && <em>{me.sellerProfile.farmLocation}</em>}
-          </div>
-        )}
-      </section>
+  const payout = PAYOUT[me.payout?.status] || PAYOUT.unset;
 
-      {/* ---------- Section rail + pane ---------- */}
-      <div className="ap-acct-grid">
-        <nav className="ap-acct-nav" aria-label="Account sections">
-          {SUB_TABS.map((t) => (
-            <button
-              key={t.id}
-              type="button"
-              className={`ap-acct-nav-item ${sub === t.id ? 'is-active' : ''}`}
-              aria-current={sub === t.id}
-              onClick={() => setSub(t.id)}
-            >
-              <t.icon size={17} strokeWidth={2.2} />
-              <span className="ap-acct-nav-text">
-                <span className="ap-acct-nav-label">{t.id}</span>
-                <span className="ap-acct-nav-hint">{t.hint}</span>
-              </span>
-            </button>
-          ))}
-        </nav>
-
-        <div className="ap-acct-pane">
-          {sub === 'Profile' && <ProfileSection me={me} onSaved={load} />}
-          {sub === 'Business' && <FarmDetailsSection me={me} onSaved={load} />}
-          {sub === 'Documents' && <DocumentsSection me={me} onSaved={load} />}
-          {sub === 'Payment' && <PaymentSetupSection me={me} onSaved={load} />}
-          {sub === 'Addresses' && <AddressesSection me={me} onSaved={load} />}
-          {sub === 'Security' && <SecuritySection />}
-          {sub === 'Notifications' && <NotificationsSection me={me} onSaved={load} />}
-        </div>
-      </div>
-    </div>
-  );
-}
-
-function SaveBar({ saving, error, onSubmit }) {
   return (
     <>
-      {error && <p className="ap-empty-state">{error}</p>}
-      <div className="ap-form-actions">
-        <button type="submit" className="ap-btn-primary" disabled={saving} onClick={onSubmit}>
-          {saving ? 'Saving…' : 'Save changes'}
-        </button>
+      <section className="panel account-id">
+        <span className="avatar avatar-lg">
+          {me.avatarUrl ? <img src={`${API_ORIGIN}${me.avatarUrl}`} alt="" /> : initialsOf(me.name, me.email)}
+        </span>
+        <div className="cell-main">
+          <strong className="account-name">{me.sellerProfile?.businessName || me.name}</strong>
+          <span>{me.email}{me.createdAt ? `, seller since ${formatDate(me.createdAt)}` : ''}</span>
+        </div>
+        <span className={`badge${payout.tone ? ` badge-${payout.tone}` : ''}`}>{payout.label}</span>
+      </section>
+
+      <div className="tabs" role="tablist" aria-label="Account sections">
+        {SECTIONS.map((s) => (
+          <button key={s.id} type="button" role="tab" className="tab" aria-selected={section === s.id} onClick={() => setSection(s.id)}>
+            {s.label}
+          </button>
+        ))}
       </div>
+
+      {section === 'profile' && (
+        <Section title="Profile" text="How buyers and the AgriFair team see you.">
+          <ProfileForm me={me} onSaved={load} withPhoto />
+        </Section>
+      )}
+      {section === 'business' && <BusinessSection me={me} onSaved={load} />}
+      {section === 'documents' && <DocumentsSection me={me} onSaved={load} />}
+      {section === 'payment' && <PaymentSection me={me} onSaved={load} state={payout} />}
+      {section === 'delivery' && <DeliverySection me={me} onSaved={load} />}
+      {section === 'security' && (
+        <>
+          <Section title="Password" text="At least 6 characters. You stay signed in after changing it.">
+            <PasswordForm />
+          </Section>
+          <section className="panel">
+            <div className="panel-head">
+              <div>
+                <h2>Recent sign-ins</h2>
+                <p>If you see one you do not recognise, change your password.</p>
+              </div>
+            </div>
+            <SignInHistory />
+          </section>
+        </>
+      )}
+      {section === 'alerts' && (
+        <Section title="Notifications" text="What the bell at the top tells you about.">
+          <NotificationsForm me={me} onSaved={load} />
+        </Section>
+      )}
     </>
   );
 }
 
-function ProfileSection({ me, onSaved }) {
-  const [form, setForm] = useState({ name: me.name || '', email: me.email || '', contact: me.contact || '', bio: me.bio || '' });
-  const [avatarFile, setAvatarFile] = useState(null);
-  const [avatarPreview, setAvatarPreview] = useState(me.avatarUrl ? `${API_ORIGIN}${me.avatarUrl}` : '');
-  const [saving, setSaving] = useState(false);
-  const [error, setError] = useState('');
-
-  function handleAvatarChange(e) {
-    const file = e.target.files?.[0];
-    if (!file) return;
-    setAvatarFile(file);
-    setAvatarPreview(URL.createObjectURL(file));
-  }
-
-  async function handleSubmit(e) {
-    e.preventDefault();
-    setError('');
-    setSaving(true);
-    try {
-      await updateAccount({ ...form, avatarFile });
-      await onSaved();
-    } catch (err) {
-      setError(err.response?.data?.error || 'Could not save profile.');
-    } finally {
-      setSaving(false);
-    }
-  }
-
+function Section({ title, text, children }) {
   return (
-    <div className="ap-panel">
-      <div className="ap-panel-header"><div><span className="ap-panel-tag">Your details</span><h2>Profile</h2><p className="ap-panel-sub">How buyers and the AgriFair team recognise you.</p></div></div>
-      <form onSubmit={handleSubmit}>
-        <div className="ap-avatar-row">
-          <div className="ap-avatar-preview">
-            {avatarPreview ? <img src={avatarPreview} alt="Avatar" /> : <span>{(form.name || '?').slice(0, 2).toUpperCase()}</span>}
-          </div>
-          <label className="ap-btn-ghost" style={{ cursor: 'pointer' }}>
-            Change photo
-            <input type="file" accept="image/*" onChange={handleAvatarChange} hidden />
-          </label>
+    <section className="panel">
+      <div className="panel-head">
+        <div>
+          <h2>{title}</h2>
+          {text && <p>{text}</p>}
         </div>
-        <div className="ap-form-row">
-          <div className="ap-form-field">
-            <label>Name</label>
-            <input type="text" value={form.name} onChange={(e) => setForm((f) => ({ ...f, name: e.target.value }))} />
-          </div>
-          <div className="ap-form-field">
-            <label>Email</label>
-            <input type="email" value={form.email} onChange={(e) => setForm((f) => ({ ...f, email: e.target.value }))} />
-          </div>
-          <div className="ap-form-field">
-            <label>Contact number</label>
-            <input type="text" value={form.contact} onChange={(e) => setForm((f) => ({ ...f, contact: e.target.value }))} placeholder="09xx-xxx-xxxx" />
-          </div>
-        </div>
-        <div className="ap-form-row">
-          <div className="ap-form-field" style={{ gridColumn: '1 / -1' }}>
-            <label>Bio</label>
-            <input type="text" value={form.bio} onChange={(e) => setForm((f) => ({ ...f, bio: e.target.value }))} placeholder="A short description of your business" />
-          </div>
-        </div>
-        <SaveBar saving={saving} error={error} onSubmit={handleSubmit} />
-      </form>
-    </div>
+      </div>
+      <div className="panel-body">{children}</div>
+    </section>
   );
 }
 
-const PAYOUT_STATE = {
-  unset:    { tone: 'idle',   icon: QrCode,      text: 'Not set up yet. Buyers can only pay you cash on delivery.' },
-  pending:  { tone: 'warn',   icon: Clock,       text: 'Waiting for Super Admin review. Cash on delivery still works meanwhile.' },
-  verified: { tone: 'good',   icon: ShieldCheck, text: 'Verified. Buyers can now scan your QR to pay you directly.' },
-  rejected: { tone: 'bad',    icon: AlertCircle, text: 'Not approved. Fix the details below and save again.' },
-};
+/** Saves through updateAccount and reports back; shared by the sections below. */
+function useSave(onSaved, okText, failText) {
+  const [saving, setSaving] = useState(false);
+  const [status, setStatus] = useState(null);
 
-const DOC_TYPES = [
-  { id: 'BIR',           label: 'BIR Certificate of Registration', hint: 'Form 2303' },
-  { id: 'DTI',           label: 'DTI Business Name',               hint: 'Sole proprietors' },
-  { id: 'SEC',           label: 'SEC Registration',                hint: 'Corporations and partnerships' },
-  { id: 'MAYORS_PERMIT', label: "Mayor's / Business Permit",       hint: 'From your city or municipality' },
-  { id: 'BARANGAY',      label: 'Barangay Clearance',              hint: 'From your barangay hall' },
-  { id: 'ORGANIC_CERT',  label: 'Organic Certification',           hint: 'Only if you advertise organic rice' },
+  const save = async (data) => {
+    setSaving(true);
+    setStatus(null);
+    try {
+      await updateAccount(data);
+      setStatus({ ok: true, text: okText });
+      await onSaved();
+      return true;
+    } catch (err) {
+      setStatus({ ok: false, text: getErrorMessage(err, failText) });
+      return false;
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  return { saving, status, setStatus, save };
+}
+
+const SELLER_TYPES = [
+  { id: 'farmer', label: 'Farmer: I grow the rice I sell' },
+  { id: 'cooperative', label: 'Cooperative: we farm as a group' },
+  { id: 'trader', label: 'Trader: I buy and resell in bulk' },
+  { id: 'retailer', label: 'Retailer: I sell from a shop or stall' },
 ];
 
-const DOC_STATE = {
-  pending:  { tone: 'warn', label: 'Under review' },
-  verified: { tone: 'good', label: 'Verified' },
-  rejected: { tone: 'bad',  label: 'Rejected' },
-};
-
-function DocumentsSection({ me, onSaved }) {
-  const [type, setType] = useState(DOC_TYPES[0].id);
-  const [referenceNo, setReferenceNo] = useState('');
-  const [file, setFile] = useState(null);
-  const [saving, setSaving] = useState(false);
-  const [error, setError] = useState('');
-
-  const docs = me.documents || [];
-  const byType = Object.fromEntries(docs.map((d) => [d.type, d]));
-
-  async function handleSubmit(e) {
-    e.preventDefault();
-    setError('');
-    if (!file) { setError('Choose the file to upload.'); return; }
-
-    setSaving(true);
-    try {
-      await updateAccount({ documentFile: file, documentMeta: { type, referenceNo } });
-      setFile(null);
-      setReferenceNo('');
-      await onSaved();
-    } catch (err) {
-      setError(err.response?.data?.error || 'Could not upload that document.');
-    } finally {
-      setSaving(false);
-    }
-  }
-
-  return (
-    <div className="ap-panel">
-      <div className="ap-panel-header">
-        <div>
-          <span className="ap-panel-tag">Compliance</span>
-          <h2>Business documents</h2>
-          <p className="ap-panel-sub">
-            Proof that you are registered to sell rice. A Super Admin reviews each one.
-          </p>
-        </div>
-      </div>
-
-      <div className="ap-doc-privacy">
-        <ShieldAlert size={16} strokeWidth={2.2} />
-        <span>
-          Your documents are stored privately and are <strong>never shown to buyers</strong>.
-          Once approved, only a verified badge appears — the image itself is not displayed
-          again, not even to you.
-        </span>
-      </div>
-
-      <ul className="ap-doc-list">
-        {DOC_TYPES.map((d) => {
-          const doc = byType[d.id];
-          const state = doc ? DOC_STATE[doc.status] : null;
-          return (
-            <li className="ap-doc-row" key={d.id}>
-              <span className={`ap-doc-icon ${doc ? `ap-doc-icon--${state.tone}` : ''}`}>
-                {doc ? <FileCheck size={16} strokeWidth={2.3} /> : <Eye size={16} strokeWidth={2.2} />}
-              </span>
-              <div className="ap-doc-text">
-                <strong>{d.label}</strong>
-                <span>{doc?.rejectionReason || d.hint}</span>
-              </div>
-              {doc
-                ? <span className={`ap-doc-chip ap-doc-chip--${state.tone}`}>{state.label}</span>
-                : <span className="ap-doc-chip">Not uploaded</span>}
-            </li>
-          );
-        })}
-      </ul>
-
-      {error && <p className="ap-form-error" style={{ marginTop: '1rem' }}>{error}</p>}
-
-      <form onSubmit={handleSubmit} className="ap-doc-form">
-        <div className="ap-form-row">
-          <div className="ap-form-field">
-            <label>Document</label>
-            <select value={type} onChange={(e) => setType(e.target.value)}>
-              {DOC_TYPES.map((d) => <option key={d.id} value={d.id}>{d.label}</option>)}
-            </select>
-          </div>
-          <div className="ap-form-field">
-            <label>Reference number (optional)</label>
-            <input
-              type="text"
-              value={referenceNo}
-              onChange={(e) => setReferenceNo(e.target.value)}
-              placeholder="e.g. TIN or permit number"
-            />
-          </div>
-          <div className="ap-form-field">
-            <label>File</label>
-            <label className="ap-btn-ghost ap-doc-pick">
-              <Upload size={14} strokeWidth={2.3} />
-              {file ? file.name.slice(0, 24) : 'Choose image or PDF'}
-              <input
-                type="file"
-                accept="image/*,application/pdf"
-                hidden
-                onChange={(e) => { setFile(e.target.files?.[0] || null); e.target.value = ''; }}
-              />
-            </label>
-          </div>
-        </div>
-
-        <div className="ap-form-actions">
-          <button type="submit" className="ap-btn-primary" disabled={saving}>
-            {saving ? 'Uploading…' : 'Upload for review'}
-          </button>
-        </div>
-      </form>
-    </div>
-  );
-}
-
-function PaymentSetupSection({ me, onSaved }) {
-  const payout = me.payout || {};
-  const [form, setForm] = useState({
-    method: payout.method || 'gcash',
-    accountName: payout.accountName || '',
-    accountNumber: payout.accountNumber || '',
-  });
-  const [qrFile, setQrFile] = useState(null);
-  const [qrPreview, setQrPreview] = useState(payout.qrImage ? `${API_ORIGIN}${payout.qrImage}` : '');
-  const [saving, setSaving] = useState(false);
-  const [error, setError] = useState('');
-
-  const state = PAYOUT_STATE[payout.status] || PAYOUT_STATE.unset;
-  const StateIcon = state.icon;
-
-  function handleQrChange(e) {
-    const file = e.target.files?.[0];
-    if (!file) return;
-    setQrFile(file);
-    setQrPreview(URL.createObjectURL(file));
-    e.target.value = '';
-  }
-
-  async function handleSubmit(e) {
-    e.preventDefault();
-    setError('');
-
-    if (!form.accountName.trim()) {
-      setError('Enter the exact name on your GCash account.');
-      return;
-    }
-    if (!form.accountNumber.trim() && !qrFile && !payout.qrImage) {
-      setError('Add your GCash number or upload your QR code.');
-      return;
-    }
-
-    setSaving(true);
-    try {
-      await updateAccount({ payout: form, paymentQrFile: qrFile });
-      setQrFile(null);
-      await onSaved();
-    } catch (err) {
-      setError(err.response?.data?.error || 'Could not save your payment details.');
-    } finally {
-      setSaving(false);
-    }
-  }
-
-  return (
-    <div className="ap-panel">
-      <div className="ap-panel-header">
-        <div>
-          <span className="ap-panel-tag">Getting paid</span>
-          <h2>Payment setup</h2>
-        </div>
-      </div>
-
-      <div className={`ap-payout-state ap-payout-state--${state.tone}`}>
-        <StateIcon size={17} strokeWidth={2.2} />
-        <span>{state.text}</span>
-      </div>
-
-      {payout.status === 'rejected' && payout.rejectionReason && (
-        <p className="ap-form-error">{payout.rejectionReason}</p>
-      )}
-
-      <p className="ap-payout-help">
-        AgriFair does not hold your money. The buyer scans this QR in their own GCash
-        app and pays you directly — then you confirm in Orders that it arrived.
-      </p>
-
-      {error && <p className="ap-form-error">{error}</p>}
-
-      <form onSubmit={handleSubmit}>
-        <div className="ap-payout-grid">
-          <div className="ap-payout-fields">
-            <div className="ap-form-row">
-              <div className="ap-form-field">
-                <label>Payment method</label>
-                <select
-                  value={form.method}
-                  onChange={(e) => setForm((f) => ({ ...f, method: e.target.value }))}
-                >
-                  <option value="gcash">GCash</option>
-                  <option value="bank">Bank transfer</option>
-                </select>
-              </div>
-              <div className="ap-form-field">
-                <label>{form.method === 'gcash' ? 'GCash number' : 'Account number'}</label>
-                <input
-                  type="text"
-                  value={form.accountNumber}
-                  onChange={(e) => setForm((f) => ({ ...f, accountNumber: e.target.value }))}
-                  placeholder="09XX XXX XXXX"
-                />
-              </div>
-            </div>
-
-            <div className="ap-form-field">
-              <label>Account name</label>
-              <input
-                type="text"
-                value={form.accountName}
-                onChange={(e) => setForm((f) => ({ ...f, accountName: e.target.value }))}
-                placeholder="Exactly as it appears in your GCash"
-              />
-              <span className="ap-field-hint">
-                Buyers check this name before sending. A mismatch is the usual reason
-                money ends up with the wrong person.
-              </span>
-            </div>
-          </div>
-
-          <div className="ap-payout-qr">
-            <label>QR code</label>
-            <div className="ap-qr-box">
-              {qrPreview ? (
-                <img src={qrPreview} alt="Your payment QR code" />
-              ) : (
-                <div className="ap-qr-empty">
-                  <QrCode size={30} strokeWidth={1.5} />
-                  <span>No QR uploaded</span>
-                </div>
-              )}
-            </div>
-            <label className="ap-btn-ghost ap-qr-upload">
-              <Upload size={14} strokeWidth={2.3} />
-              {qrPreview ? 'Replace QR' : 'Upload QR'}
-              <input type="file" accept="image/*" hidden onChange={handleQrChange} />
-            </label>
-          </div>
-        </div>
-
-        <div className="ap-form-actions">
-          <button type="submit" className="ap-btn-primary" disabled={saving}>
-            {saving ? 'Saving…' : 'Save payment details'}
-          </button>
-        </div>
-      </form>
-
-      <p className="ap-payout-note">
-        Saving sends your details for Super Admin review again, so buyers are never
-        shown a QR nobody has checked.
-      </p>
-    </div>
-  );
-}
-
-function FarmDetailsSection({ me, onSaved }) {
+function BusinessSection({ me, onSaved }) {
   const sp = me.sellerProfile || {};
   const [form, setForm] = useState({
     sellerType: me.sellerType || 'farmer',
@@ -499,311 +160,332 @@ function FarmDetailsSection({ me, onSaved }) {
     farmLocation: sp.farmLocation || '',
     farmSize: sp.farmSize || '',
   });
-  const isFarmer = form.sellerType === 'farmer' || form.sellerType === 'cooperative';
-  const [existingPhotos, setExistingPhotos] = useState(sp.farmPhotos || []);
+  const [photos, setPhotos] = useState(sp.farmPhotos || []);
   const [newPhotos, setNewPhotos] = useState([]);
-  const [saving, setSaving] = useState(false);
-  const [error, setError] = useState('');
+  const { saving, status, save } = useSave(onSaved, 'Business details saved.', 'Could not save your business details.');
+  const farms = form.sellerType === 'farmer' || form.sellerType === 'cooperative';
+  const set = (key) => (e) => setForm((f) => ({ ...f, [key]: e.target.value }));
 
-  function handlePhotosChange(e) {
-    const files = Array.from(e.target.files || []);
-    setNewPhotos((prev) => [...prev, ...files.map((f) => Object.assign(f, { preview: URL.createObjectURL(f) }))]);
-    e.target.value = '';
-  }
-
-  async function handleSubmit(e) {
+  async function submit(e) {
     e.preventDefault();
-    setError('');
-    setSaving(true);
-    try {
-      await updateAccount({
-        sellerType: form.sellerType,
-        sellerProfile: {
-          businessName: form.businessName,
-          businessAddress: form.businessAddress,
-          farmName: isFarmer ? form.farmName : '',
-          farmLocation: isFarmer ? form.farmLocation : '',
-          farmSize: isFarmer ? form.farmSize : '',
-          farmPhotos: existingPhotos,
-        },
-        farmPhotoFiles: newPhotos,
-      });
-      setNewPhotos([]);
-      await onSaved();
-    } catch (err) {
-      setError(err.response?.data?.error || 'Could not save your business details.');
-    } finally {
-      setSaving(false);
-    }
+    const ok = await save({
+      sellerType: form.sellerType,
+      sellerProfile: {
+        businessName: form.businessName,
+        businessAddress: form.businessAddress,
+        farmName: farms ? form.farmName : '',
+        farmLocation: farms ? form.farmLocation : '',
+        farmSize: farms ? form.farmSize : '',
+        farmPhotos: photos,
+      },
+      farmPhotoFiles: newPhotos,
+    });
+    if (ok) setNewPhotos([]);
   }
 
   return (
-    <div className="ap-panel">
-      <div className="ap-panel-header">
-        <div>
-          <span className="ap-panel-tag">Your business</span>
-          <h2>Business details</h2>
-          <p className="ap-panel-sub">Shown to buyers browsing your listings.</p>
-        </div>
-      </div>
-      <form onSubmit={handleSubmit}>
-        <div className="ap-form-row">
-          <div className="ap-form-field">
-            <label>What kind of seller are you?</label>
-            <select
-              value={form.sellerType}
-              onChange={(e) => setForm((f) => ({ ...f, sellerType: e.target.value }))}
-            >
+    <Section title="Business" text="Shown to buyers on your shop page.">
+      <form className="form-grid" onSubmit={submit}>
+        <div className="form-grid-2">
+          <label className="field">
+            <span className="field-label">What kind of seller are you?</span>
+            <select className="select" value={form.sellerType} onChange={set('sellerType')}>
               {SELLER_TYPES.map((t) => <option key={t.id} value={t.id}>{t.label}</option>)}
             </select>
-            <span className="ap-field-hint">
-              {SELLER_TYPES.find((t) => t.id === form.sellerType)?.hint}
-            </span>
-          </div>
-          <div className="ap-form-field">
-            <label>Business name</label>
-            <input
-              type="text"
-              value={form.businessName}
-              onChange={(e) => setForm((f) => ({ ...f, businessName: e.target.value }))}
-              placeholder="As registered with DTI or SEC"
-            />
-          </div>
+          </label>
+          <label className="field">
+            <span className="field-label">Business name</span>
+            <input className="input" value={form.businessName} onChange={set('businessName')} placeholder="As registered with DTI or SEC" autoComplete="organization" />
+          </label>
+          <label className="field span-all">
+            <span className="field-label">Business address</span>
+            <input className="input" value={form.businessAddress} onChange={set('businessAddress')} autoComplete="street-address" />
+          </label>
         </div>
 
-        <div className="ap-form-field" style={{ marginBottom: '0.9rem' }}>
-          <label>Business address</label>
-          <input
-            type="text"
-            value={form.businessAddress}
-            onChange={(e) => setForm((f) => ({ ...f, businessAddress: e.target.value }))}
-            placeholder="Where your business operates"
-          />
-        </div>
-
-        {!isFarmer && (
-          <p className="ap-field-hint" style={{ marginBottom: '0.9rem' }}>
-            Farm fields are hidden because you sell rice without farming it yourself.
-          </p>
-        )}
-
-        {isFarmer && (
-        <div className="ap-form-row">
-          <div className="ap-form-field">
-            <label>Farm name</label>
-            <input type="text" value={form.farmName} onChange={(e) => setForm((f) => ({ ...f, farmName: e.target.value }))} />
-          </div>
-          <div className="ap-form-field">
-            <label>Location</label>
-            <input type="text" value={form.farmLocation} onChange={(e) => setForm((f) => ({ ...f, farmLocation: e.target.value }))} />
-          </div>
-          <div className="ap-form-field">
-            <label>Size</label>
-            <input type="text" value={form.farmSize} onChange={(e) => setForm((f) => ({ ...f, farmSize: e.target.value }))} placeholder="e.g. 5 hectares" />
-          </div>
-        </div>
-        )}
-
-        {isFarmer && (
-        <div className="ap-form-field" style={{ marginBottom: '0.9rem' }}>
-          <label>Farm photos (max 5)</label>
-          <div className="ap-image-grid">
-            {existingPhotos.map((src, idx) => (
-              <div className="ap-image-thumb" key={`e-${idx}`}>
-                <img src={`${API_ORIGIN}${src}`} alt="Farm" />
-                <button type="button" aria-label="Remove photo" onClick={() => setExistingPhotos((p) => p.filter((_, i) => i !== idx))}><X size={13} strokeWidth={2.6} /></button>
+        {farms && (
+          <>
+            <div className="form-grid-3">
+              <label className="field">
+                <span className="field-label">Farm name</span>
+                <input className="input" value={form.farmName} onChange={set('farmName')} autoComplete="off" />
+              </label>
+              <label className="field">
+                <span className="field-label">Location</span>
+                <input className="input" value={form.farmLocation} onChange={set('farmLocation')} placeholder="Town, province" autoComplete="off" />
+              </label>
+              <label className="field">
+                <span className="field-label">Size</span>
+                <input className="input" value={form.farmSize} onChange={set('farmSize')} placeholder="5 hectares" autoComplete="off" />
+              </label>
+            </div>
+            <fieldset className="field">
+              <legend className="field-label">Farm photos <span className="optional">(up to 5)</span></legend>
+              <div className="thumbs">
+                {photos.map((src, i) => (
+                  <div className="thumb" key={src}>
+                    <img src={`${API_ORIGIN}${src}`} alt={`Farm photo ${i + 1}`} width="88" height="88" />
+                    <button type="button" aria-label={`Remove farm photo ${i + 1}`} onClick={() => setPhotos((p) => p.filter((_, j) => j !== i))}>
+                      <X size={13} aria-hidden="true" />
+                    </button>
+                  </div>
+                ))}
+                {newPhotos.map((f, i) => (
+                  <div className="thumb" key={f.preview}>
+                    <img src={f.preview} alt={`New farm photo ${i + 1}`} width="88" height="88" />
+                    <button type="button" aria-label={`Remove new farm photo ${i + 1}`} onClick={() => setNewPhotos((p) => p.filter((_, j) => j !== i))}>
+                      <X size={13} aria-hidden="true" />
+                    </button>
+                  </div>
+                ))}
+                {photos.length + newPhotos.length < 5 && (
+                  <label className="thumb thumb-add">
+                    <ImagePlus size={20} aria-hidden="true" />
+                    <span>Add</span>
+                    <input
+                      type="file"
+                      accept="image/jpeg,image/png,image/webp"
+                      multiple
+                      hidden
+                      onChange={(e) => {
+                        const files = Array.from(e.target.files || []);
+                        e.target.value = '';
+                        setNewPhotos((prev) => [...prev, ...files.map((f) => Object.assign(f, { preview: URL.createObjectURL(f) }))].slice(0, 5 - photos.length));
+                      }}
+                    />
+                  </label>
+                )}
               </div>
-            ))}
-            {newPhotos.map((f, idx) => (
-              <div className="ap-image-thumb" key={`n-${idx}`}>
-                <img src={f.preview} alt="New" />
-                <button type="button" aria-label="Remove photo" onClick={() => setNewPhotos((p) => p.filter((_, i) => i !== idx))}><X size={13} strokeWidth={2.6} /></button>
-              </div>
-            ))}
-            {existingPhotos.length + newPhotos.length < 5 && (
-              <label className="ap-image-upload-btn">+<input type="file" accept="image/*" multiple onChange={handlePhotosChange} hidden /></label>
-            )}
-          </div>
-        </div>
+            </fieldset>
+          </>
         )}
-        <SaveBar saving={saving} error={error} onSubmit={handleSubmit} />
+
+        <FormStatus status={status} />
+        <div className="form-actions">
+          <button type="submit" className="btn btn-primary" disabled={saving}>{saving ? 'Saving…' : 'Save business details'}</button>
+        </div>
       </form>
-    </div>
+    </Section>
   );
 }
 
-function AddressesSection({ me, onSaved }) {
-  const [form, setForm] = useState({ pickupAddress: me.pickupAddress || '', deliveryOrigin: me.deliveryOrigin || '' });
-  const [saving, setSaving] = useState(false);
-  const [error, setError] = useState('');
+const DOC_TYPES = [
+  { id: 'BIR', label: 'BIR Certificate of Registration', hint: 'Form 2303' },
+  { id: 'DTI', label: 'DTI Business Name', hint: 'Sole proprietors' },
+  { id: 'SEC', label: 'SEC Registration', hint: 'Corporations and partnerships' },
+  { id: 'MAYORS_PERMIT', label: "Mayor's or business permit", hint: 'From your city or municipality' },
+  { id: 'BARANGAY', label: 'Barangay clearance', hint: 'From your barangay hall' },
+  { id: 'ORGANIC_CERT', label: 'Organic certification', hint: 'Only if you sell rice as organic' },
+];
 
-  async function handleSubmit(e) {
+const DOC_STATE = {
+  pending: { tone: 'warning', label: 'Under review' },
+  verified: { tone: 'success', label: 'Verified' },
+  rejected: { tone: 'danger', label: 'Rejected' },
+};
+
+function DocumentsSection({ me, onSaved }) {
+  const [type, setType] = useState(DOC_TYPES[0].id);
+  const [referenceNo, setReferenceNo] = useState('');
+  const [file, setFile] = useState(null);
+  const { saving, status, setStatus, save } = useSave(onSaved, 'Uploaded. The AgriFair team will review it.', 'Could not upload that document.');
+  const byType = Object.fromEntries((me.documents || []).map((d) => [d.type, d]));
+
+  async function submit(e) {
     e.preventDefault();
-    setError('');
-    setSaving(true);
-    try {
-      await updateAccount(form);
-      await onSaved();
-    } catch (err) {
-      setError(err.response?.data?.error || 'Could not save addresses.');
-    } finally {
-      setSaving(false);
-    }
-  }
-
-  return (
-    <div className="ap-panel">
-      <div className="ap-panel-header"><div><span className="ap-panel-tag">Logistics</span><h2>Addresses</h2><p className="ap-panel-sub">Where orders are collected from and dispatched.</p></div></div>
-      <form onSubmit={handleSubmit}>
-        <div className="ap-form-row">
-          <div className="ap-form-field" style={{ gridColumn: '1 / -1' }}>
-            <label>Pickup address</label>
-            <input type="text" value={form.pickupAddress} onChange={(e) => setForm((f) => ({ ...f, pickupAddress: e.target.value }))} placeholder="Where buyers or couriers pick up orders" />
-          </div>
-        </div>
-        <div className="ap-form-row">
-          <div className="ap-form-field" style={{ gridColumn: '1 / -1' }}>
-            <label>Delivery origin</label>
-            <input type="text" value={form.deliveryOrigin} onChange={(e) => setForm((f) => ({ ...f, deliveryOrigin: e.target.value }))} placeholder="Where shipments are dispatched from" />
-          </div>
-        </div>
-        <SaveBar saving={saving} error={error} onSubmit={handleSubmit} />
-      </form>
-    </div>
-  );
-}
-
-function SecuritySection() {
-  const [pwForm, setPwForm] = useState({ currentPassword: '', newPassword: '', confirmPassword: '' });
-  const [saving, setSaving] = useState(false);
-  const [error, setError] = useState('');
-  const [success, setSuccess] = useState('');
-  const [sessions, setSessions] = useState([]);
-  const [sessionsLoading, setSessionsLoading] = useState(true);
-
-  useEffect(() => {
-    let mounted = true;
-    (async () => {
-      try {
-        const res = await fetchLoginHistory();
-        if (mounted) setSessions(res.data || []);
-      } catch {
-        if (mounted) setSessions([]);
-      } finally {
-        if (mounted) setSessionsLoading(false);
-      }
-    })();
-    return () => { mounted = false; };
-  }, []);
-
-  async function handleSubmit(e) {
-    e.preventDefault();
-    setError('');
-    setSuccess('');
-    if (pwForm.newPassword !== pwForm.confirmPassword) {
-      setError('New passwords do not match.');
+    if (!file) {
+      setStatus({ ok: false, text: 'Choose the file to upload.' });
       return;
     }
-    setSaving(true);
-    try {
-      await changePassword(pwForm.currentPassword, pwForm.newPassword);
-      setSuccess('Password updated successfully.');
-      setPwForm({ currentPassword: '', newPassword: '', confirmPassword: '' });
-    } catch (err) {
-      setError(err.response?.data?.error || 'Could not update password.');
-    } finally {
-      setSaving(false);
+    const ok = await save({ documentFile: file, documentMeta: { type, referenceNo } });
+    if (ok) {
+      setFile(null);
+      setReferenceNo('');
     }
   }
 
   return (
     <>
-      <div className="ap-panel">
-        <div className="ap-panel-header"><div><span className="ap-panel-tag">Security</span><h2>Change password</h2><p className="ap-panel-sub">At least 6 characters. You stay signed in afterwards.</p></div></div>
-        <form onSubmit={handleSubmit}>
-          {success && <p style={{ color: 'var(--green-700)', fontSize: '0.85rem', marginBottom: '0.8rem' }}>{success}</p>}
-          <div className="ap-form-row">
-            <div className="ap-form-field">
-              <label>Current password</label>
-              <input type="password" value={pwForm.currentPassword} onChange={(e) => setPwForm((f) => ({ ...f, currentPassword: e.target.value }))} />
-            </div>
-            <div className="ap-form-field">
-              <label>New password</label>
-              <input type="password" value={pwForm.newPassword} onChange={(e) => setPwForm((f) => ({ ...f, newPassword: e.target.value }))} />
-            </div>
-            <div className="ap-form-field">
-              <label>Confirm new password</label>
-              <input type="password" value={pwForm.confirmPassword} onChange={(e) => setPwForm((f) => ({ ...f, confirmPassword: e.target.value }))} />
-            </div>
+      <section className="panel">
+        <div className="panel-head">
+          <div>
+            <h2>Business documents</h2>
+            <p>Proof that you may sell rice. Stored privately; buyers only see a verified badge, never the file.</p>
           </div>
-          <SaveBar saving={saving} error={error} onSubmit={handleSubmit} />
-        </form>
-      </div>
+        </div>
+        <ul className="list">
+          {DOC_TYPES.map((d) => {
+            const doc = byType[d.id];
+            const state = doc ? DOC_STATE[doc.status] : null;
+            return (
+              <li key={d.id} className="list-row">
+                <span className="list-row-main">
+                  <strong>{d.label}</strong>
+                  <span>{doc?.rejectionReason ? `Rejected: ${doc.rejectionReason}` : d.hint}</span>
+                </span>
+                <span className={`badge${state ? ` badge-${state.tone}` : ''}`}>{state ? state.label : 'Not uploaded'}</span>
+              </li>
+            );
+          })}
+        </ul>
+      </section>
 
-      <div className="ap-panel">
-        <div className="ap-panel-header"><div><span className="ap-panel-tag">Access</span><h2>Recent sign-ins</h2><p className="ap-panel-sub">If you see something you did not do, change your password.</p></div></div>
-        {sessionsLoading && <p className="ap-empty-state">Loading…</p>}
-        {!sessionsLoading && sessions.length === 0 && <p className="ap-empty-state">No login history yet.</p>}
-        {!sessionsLoading && sessions.length > 0 && (
-          <div className="ap-table-wrap">
-            <table className="ap-table">
-              <thead><tr><th>Date</th><th>IP Address</th><th>Device</th></tr></thead>
-              <tbody>
-                {sessions.map((s) => (
-                  <tr key={s._id}>
-                    <td>{new Date(s.loggedInAt).toLocaleString()}</td>
-                    <td>{s.ipAddress || '—'}</td>
-                    <td style={{ maxWidth: 320, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{s.userAgent || '—'}</td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
+      <Section title="Upload a document">
+        <form className="form-grid" onSubmit={submit}>
+          <div className="form-grid-3">
+            <label className="field">
+              <span className="field-label">Document</span>
+              <select className="select" value={type} onChange={(e) => setType(e.target.value)}>
+                {DOC_TYPES.map((d) => <option key={d.id} value={d.id}>{d.label}</option>)}
+              </select>
+            </label>
+            <label className="field">
+              <span className="field-label">Reference no. <span className="optional">(optional)</span></span>
+              <input className="input" value={referenceNo} onChange={(e) => setReferenceNo(e.target.value)} placeholder="TIN or permit number" autoComplete="off" />
+            </label>
+            <label className="field">
+              <span className="field-label">File</span>
+              <input
+                className="input input-file"
+                type="file"
+                accept="image/jpeg,image/png,image/webp,application/pdf"
+                onChange={(e) => setFile(e.target.files?.[0] || null)}
+              />
+              <span className="field-hint">A photo or a PDF.</span>
+            </label>
           </div>
-        )}
-      </div>
+          <FormStatus status={status} />
+          <div className="form-actions">
+            <button type="submit" className="btn btn-primary" disabled={saving}>{saving ? 'Uploading…' : 'Upload for review'}</button>
+          </div>
+        </form>
+      </Section>
     </>
   );
 }
 
-function NotificationsSection({ me, onSaved }) {
-  const [prefs, setPrefs] = useState(me.notificationPrefs || { order: true, payment: true, message: true, stock: true, system: true });
-  const [saving, setSaving] = useState(false);
-  const [error, setError] = useState('');
+function PaymentSection({ me, onSaved, state }) {
+  const payout = me.payout || {};
+  const [form, setForm] = useState({
+    method: payout.method || 'gcash',
+    accountName: payout.accountName || '',
+    accountNumber: payout.accountNumber || '',
+  });
+  const [qrFile, setQrFile] = useState(null);
+  const [qrPreview, setQrPreview] = useState('');
+  const { saving, status, setStatus, save } = useSave(onSaved, 'Saved. The AgriFair team will check it before buyers see it.', 'Could not save your GCash details.');
+  const set = (key) => (e) => setForm((f) => ({ ...f, [key]: e.target.value }));
 
-  const LABELS = { order: 'Order updates', payment: 'Payment confirmations', message: 'New messages', stock: 'Low-stock alerts', system: 'Platform announcements' };
-
-  async function handleSubmit(e) {
+  async function submit(e) {
     e.preventDefault();
-    setError('');
-    setSaving(true);
-    try {
-      await updateAccount({ notificationPrefs: prefs });
-      await onSaved();
-    } catch (err) {
-      setError(err.response?.data?.error || 'Could not save notification preferences.');
-    } finally {
-      setSaving(false);
+    if (!form.accountName.trim()) {
+      setStatus({ ok: false, text: 'Enter the name on your GCash account exactly.' });
+      return;
     }
+    if (!form.accountNumber.trim() && !qrFile && !payout.qrImage) {
+      setStatus({ ok: false, text: 'Add your GCash number or upload your QR code.' });
+      return;
+    }
+    if (await save({ payout: form, paymentQrFile: qrFile })) setQrFile(null);
   }
 
   return (
-    <div className="ap-panel">
-      <div className="ap-panel-header"><div><span className="ap-panel-tag">Alerts</span><h2>Notifications</h2><p className="ap-panel-sub">Choose what AgriFair tells you about.</p></div></div>
-      <form onSubmit={handleSubmit}>
-        <div className="ap-toggle-list">
-          {Object.keys(LABELS).map((key) => (
-            <label className="ap-toggle-row" key={key}>
-              <span>{LABELS[key]}</span>
+    <Section title="GCash" text="Buyers pay straight to your own GCash. AgriFair never holds your money.">
+      <form className="form-grid" onSubmit={submit}>
+        <p className={`alert alert-${state.tone || 'info'}`}>
+          {state.text}
+          {payout.status === 'rejected' && payout.rejectionReason ? ` Reason: ${payout.rejectionReason}` : ''}
+        </p>
+
+        <div className="payout-grid">
+          <div className="form-grid">
+            <label className="field">
+              <span className="field-label">GCash number</span>
+              <input className="input" type="tel" inputMode="tel" value={form.accountNumber} onChange={set('accountNumber')} placeholder="0917 123 4567" autoComplete="off" />
+            </label>
+            <label className="field">
+              <span className="field-label">Account name</span>
+              <input className="input" value={form.accountName} onChange={set('accountName')} autoComplete="off" />
+              <span className="field-hint">Exactly as GCash shows it. Buyers check this name before they send money.</span>
+            </label>
+          </div>
+
+          <div className="field">
+            <span className="field-label">QR code</span>
+            <div className="qr-box">
+              {qrPreview
+                ? <img src={qrPreview} alt="Your new GCash QR code" />
+                : payout.qrImage
+                  ? <PrivateImage path={payout.qrImage} alt="Your GCash QR code" />
+                  : <span className="muted">No QR code yet</span>}
+            </div>
+            <label className="btn btn-secondary btn-sm">
+              {payout.qrImage || qrPreview ? 'Replace QR code' : 'Upload QR code'}
               <input
-                type="checkbox"
-                checked={!!prefs[key]}
-                onChange={(e) => setPrefs((p) => ({ ...p, [key]: e.target.checked }))}
+                type="file"
+                accept="image/jpeg,image/png,image/webp"
+                hidden
+                onChange={(e) => {
+                  const file = e.target.files?.[0];
+                  e.target.value = '';
+                  if (!file) return;
+                  setQrFile(file);
+                  setQrPreview(URL.createObjectURL(file));
+                }}
               />
             </label>
-          ))}
+          </div>
         </div>
-        <SaveBar saving={saving} error={error} onSubmit={handleSubmit} />
+
+        <p className="field-hint">Saving sends your details for review again, so buyers never see a QR code nobody has checked.</p>
+        <FormStatus status={status} />
+        <div className="form-actions">
+          <button type="submit" className="btn btn-primary" disabled={saving}>{saving ? 'Saving…' : 'Save GCash details'}</button>
+        </div>
       </form>
-    </div>
+    </Section>
+  );
+}
+
+function DeliverySection({ me, onSaved }) {
+  const [form, setForm] = useState({
+    pickupAddress: me.pickupAddress || '',
+    deliveryOrigin: me.deliveryOrigin || '',
+    deliveryFee: me.deliveryFee ?? 80,
+  });
+  const { saving, status, save } = useSave(onSaved, 'Saved.', 'Could not save.');
+  const set = (key) => (e) => setForm((f) => ({ ...f, [key]: e.target.value }));
+
+  return (
+    <Section title="Pickup and delivery" text="Where your riders collect orders, and what you charge to deliver.">
+      <form
+        className="form-grid"
+        onSubmit={(e) => {
+          e.preventDefault();
+          save(form);
+        }}
+      >
+        <div className="form-grid-2">
+          <label className="field span-all">
+            <span className="field-label">Pickup address</span>
+            <input className="input" value={form.pickupAddress} onChange={set('pickupAddress')} placeholder="Where riders collect orders" autoComplete="street-address" />
+            <span className="field-hint">To pin it on the map, open any order out for delivery and use "Pin my shop here".</span>
+          </label>
+          <label className="field">
+            <span className="field-label">Delivery fee per order (₱)</span>
+            <input className="input" type="number" inputMode="numeric" min="0" max="5000" step="1" value={form.deliveryFee} onChange={set('deliveryFee')} />
+            <span className="field-hint">Charged once per order from your shop, however many sacks are in it. Set 0 for free delivery.</span>
+          </label>
+          <label className="field">
+            <span className="field-label">You deliver around <span className="optional">(optional)</span></span>
+            <input className="input" value={form.deliveryOrigin} onChange={set('deliveryOrigin')} placeholder="Cabanatuan and nearby towns" autoComplete="off" />
+          </label>
+        </div>
+        <FormStatus status={status} />
+        <div className="form-actions">
+          <button type="submit" className="btn btn-primary" disabled={saving}>{saving ? 'Saving…' : 'Save'}</button>
+        </div>
+      </form>
+    </Section>
   );
 }

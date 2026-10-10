@@ -1,0 +1,385 @@
+/* Sign-in, sign-up, password reset: forest form panel, cream brand panel. */
+
+.auth {
+  display: grid;
+  grid-template-columns: minmax(0, 0.95fr) minmax(0, 1.05fr);
+  min-height: 100dvh;
+}
+
+.auth-flip .auth-form-side {
+  order: 2;
+}
+
+/* ── The form, on forest ── */
+
+.auth-form-side {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  gap: 28px;
+  min-height: 100dvh;
+  padding: clamp(20px, 3vw, 40px) clamp(20px, 4vw, 64px);
+  color: #fff;
+  background:
+    radial-gradient(circle at 12% 86%, rgba(201, 168, 76, 0.13), transparent 28%),
+    radial-gradient(circle at 92% 8%, rgba(125, 191, 125, 0.12), transparent 32%),
+    linear-gradient(160deg, var(--g950), var(--g900));
+}
+
+.auth-form-side::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background-image:
+    linear-gradient(rgba(255, 255, 255, 0.025) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(255, 255, 255, 0.025) 1px, transparent 1px);
+  background-size: 64px 64px;
+  mask-image: radial-gradient(ellipse at center, #000 30%, transparent 75%);
+  pointer-events: none;
+}
+
+.auth-form-side > * {
+  position: relative;
+}
+
+.auth-brand {
+  display: inline-flex;
+  align-items: center;
+  gap: 12px;
+  align-self: flex-start;
+  padding: 6px 14px 6px 6px;
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-radius: 14px;
+  background: rgba(255, 255, 255, 0.05);
+  font-family: var(--font-display);
+  font-size: 1.3rem;
+  font-weight: 700;
+  transition: background 0.2s ease;
+}
+
+.auth-brand:hover {
+  background: rgba(255, 255, 255, 0.09);
+}
+
+.auth-brand img {
+  border-radius: 10px;
+}
+
+.auth-body {
+  width: 100%;
+  max-width: 420px;
+  margin: auto;
+  animation: hero-in 0.8s var(--ease-out) both;
+}
+
+.auth-body h1 {
+  font-size: clamp(2rem, 3.4vw, 2.6rem);
+  letter-spacing: -0.03em;
+  color: #fff;
+}
+
+.auth-intro {
+  margin-top: 10px;
+  color: rgba(255, 255, 255, 0.72);
+  font-size: 0.98rem;
+  line-height: 1.6;
+}
+
+.auth-intro strong {
+  color: #fff;
+}
+
+.auth-form {
+  display: grid;
+  gap: 16px;
+  margin-top: 28px;
+}
+
+.auth-form .btn-primary {
+  margin-top: 6px;
+}
+
+/* Fields on the dark panel. */
+.auth-form-side .field-label {
+  color: rgba(255, 255, 255, 0.85);
+}
+
+.auth-form-side .field-label .optional,
+.auth-form-side .field-hint {
+  color: rgba(255, 255, 255, 0.55);
+}
+
+.auth-form-side .field-error {
+  color: #ffb3a8;
+}
+
+.auth-form-side .input {
+  min-height: 46px;
+  border-color: rgba(255, 255, 255, 0.14);
+  background: rgba(255, 255, 255, 0.06);
+  color: #fff;
+}
+
+.auth-form-side .input::placeholder {
+  color: rgba(255, 255, 255, 0.4);
+}
+
+.auth-form-side .input:hover {
+  border-color: rgba(255, 255, 255, 0.28);
+}
+
+.auth-form-side .input:focus {
+  border-color: var(--gold);
+  background: rgba(255, 255, 255, 0.09);
+  box-shadow: 0 0 0 3px rgba(201, 168, 76, 0.22);
+}
+
+.auth-form-side .field.has-error .input {
+  border-color: #ff8f80;
+}
+
+.auth-form-side .input-group-btn {
+  color: rgba(255, 255, 255, 0.6);
+}
+
+.auth-form-side .input-group-btn:hover {
+  background: rgba(255, 255, 255, 0.08);
+  color: #fff;
+}
+
+.auth-form-side .check {
+  color: rgba(255, 255, 255, 0.75);
+}
+
+.auth-form-side .check input {
+  accent-color: var(--gold);
+}
+
+.auth-form-side .link {
+  color: var(--gold-lt);
+  text-decoration-color: rgba(232, 201, 123, 0.35);
+}
+
+.auth-form-side :focus-visible {
+  outline-color: var(--gold-lt);
+}
+
+.auth-form-side .alert {
+  margin-top: 22px;
+}
+
+.auth-form-side .alert-danger {
+  background: rgba(217, 64, 64, 0.16);
+  color: #ffc2b9;
+}
+
+.auth-form-side .alert-success {
+  background: rgba(125, 191, 125, 0.16);
+  color: #c9ecc9;
+}
+
+.auth-form-side .alert-warning {
+  background: rgba(201, 168, 76, 0.18);
+  color: var(--gold-lt);
+}
+
+.auth-form-side .btn-secondary {
+  background: rgba(255, 255, 255, 0.06);
+  border-color: rgba(255, 255, 255, 0.2);
+  color: #fff;
+}
+
+.auth-form-side .btn-secondary:hover:not(:disabled) {
+  background: rgba(255, 255, 255, 0.1);
+  border-color: rgba(255, 255, 255, 0.35);
+}
+
+.auth-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+
+.auth-alt {
+  margin-top: 20px;
+  color: rgba(255, 255, 255, 0.7);
+  font-size: 0.9rem;
+}
+
+.auth-footer {
+  color: rgba(255, 255, 255, 0.6);
+  font-size: 0.88rem;
+}
+
+.auth-next {
+  display: grid;
+  gap: 10px;
+  margin-top: 24px;
+  padding-left: 20px;
+  color: rgba(255, 255, 255, 0.8);
+}
+
+.auth-next li::marker {
+  color: var(--gold);
+  font-weight: 700;
+}
+
+.auth-resend {
+  margin-top: 22px;
+}
+
+.input-code {
+  font-size: 1.3rem;
+  letter-spacing: 0.3em;
+  font-variant-numeric: tabular-nums;
+}
+
+/* ── The brand, on cream ── */
+
+.auth-brand-side {
+  position: relative;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: clamp(28px, 4.4vw, 70px);
+  overflow: hidden;
+  background:
+    radial-gradient(circle at 86% 4%, rgba(201, 168, 76, 0.22), transparent 26%),
+    radial-gradient(circle at 12% 92%, rgba(74, 140, 74, 0.15), transparent 30%),
+    linear-gradient(145deg, #faf7ed, var(--bg));
+}
+
+/* Two thin rings, as in the original: quiet structure behind the copy. */
+.auth-brand-side::before,
+.auth-brand-side::after {
+  content: '';
+  position: absolute;
+  border: 1px solid rgba(18, 33, 18, 0.07);
+  border-radius: 50%;
+}
+
+.auth-brand-side::before {
+  top: 9%;
+  right: 7%;
+  width: 150px;
+  height: 150px;
+}
+
+.auth-brand-side::after {
+  right: -90px;
+  bottom: -90px;
+  width: 300px;
+  height: 300px;
+}
+
+.auth-brand-content {
+  position: relative;
+  max-width: 520px;
+  animation: hero-in 0.9s var(--ease-out) 0.15s both;
+}
+
+.auth-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 9px;
+  padding: 6px 15px;
+  border: 1px solid rgba(18, 33, 18, 0.1);
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.65);
+  color: var(--g800);
+  font-size: 0.74rem;
+  font-weight: 700;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+}
+
+.auth-badge span {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: var(--gold);
+}
+
+.auth-brand-side h2 {
+  margin-top: 22px;
+  font-size: clamp(2.4rem, 4.2vw, 3.8rem);
+  line-height: 1.02;
+  letter-spacing: -0.035em;
+  color: var(--g900);
+}
+
+.auth-brand-side h2 em {
+  display: block;
+  font-weight: 600;
+  color: var(--g700);
+}
+
+.auth-brand-text {
+  margin-top: 18px;
+  max-width: 34rem;
+  color: var(--text-2);
+  font-size: 1.05rem;
+  line-height: 1.65;
+}
+
+/* What this portal is for, on a dark card. */
+.auth-points {
+  display: grid;
+  gap: 2px;
+  margin-top: 30px;
+  padding: 10px;
+  list-style: none;
+  border-radius: 18px;
+  background:
+    linear-gradient(135deg, rgba(255, 255, 255, 0.07), transparent 42%),
+    var(--g900);
+  box-shadow: 0 28px 55px rgba(18, 33, 18, 0.2);
+}
+
+.auth-points li {
+  display: grid;
+  gap: 2px;
+  padding: 12px 14px;
+  border-radius: 12px;
+  transition: background 0.2s ease;
+}
+
+.auth-points li:hover {
+  background: rgba(255, 255, 255, 0.05);
+}
+
+.auth-points strong {
+  color: var(--gold-lt);
+  font-family: var(--font-display);
+  font-size: 1.02rem;
+}
+
+.auth-points span {
+  color: rgba(255, 255, 255, 0.72);
+  font-size: 0.9rem;
+}
+
+@media (max-width: 960px) {
+  .auth {
+    grid-template-columns: 1fr;
+  }
+
+  .auth-brand-side {
+    display: none;
+  }
+
+  .auth-flip .auth-form-side {
+    order: 0;
+  }
+
+  .auth-form-side {
+    padding: 18px 18px 26px;
+    gap: 22px;
+  }
+
+  .auth-body {
+    margin: 12px 0 auto;
+  }
+}

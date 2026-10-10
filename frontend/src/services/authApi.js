@@ -1,5 +1,5 @@
 import axios from 'axios';
-import { clearSession } from '../utils/auth';
+import { clearSession, getToken } from '../utils/auth';
 
 // Without VITE_API_URL, talk to port 8080 on whatever host served the page:
 // localhost on the laptop, the laptop's LAN IP when opened from a phone (for
@@ -14,7 +14,7 @@ const API = axios.create({
 });
 
 API.interceptors.request.use((config) => {
-  const token = sessionStorage.getItem('token');
+  const token = getToken();
   if (token) {
     config.headers.Authorization = `Bearer ${token}`;
   }
@@ -31,7 +31,7 @@ API.interceptors.response.use(
   (response) => response,
   (err) => {
     const suspended = err?.response?.data?.code === 'ACCOUNT_SUSPENDED';
-    if (suspended && sessionStorage.getItem('token')) {
+    if (suspended && getToken()) {
       clearSession();
       window.location.replace('/login?suspended=1');
     }
@@ -44,19 +44,21 @@ API.interceptors.response.use(
  * a stopped backend or a CORS rejection collapsed into a bare "Login failed".
  */
 export function getErrorMessage(err, fallback = 'Something went wrong. Please try again.') {
-  const serverMessage = err?.response?.data?.message;
+  // Routes answer with `message` or, in older ones, `error`.
+  const data = err?.response?.data;
+  const serverMessage = data?.message || data?.error;
   if (serverMessage) return serverMessage;
 
-  if (err?.response) {
-    return `${fallback} (server responded ${err.response.status} ${err.response.statusText || ''})`.trim();
-  }
+  if (err?.response) return fallback;
 
   if (err?.code === 'ECONNABORTED') {
     return 'The server took too long to respond. Please try again.';
   }
 
   if (err?.request) {
-    return `Cannot reach the AgriFair server at ${API_ORIGIN}. Make sure the backend is running (cd backend && npm run dev).`;
+    return import.meta.env.DEV
+      ? `Cannot reach the AgriFair server at ${API_ORIGIN}. Is the backend running (cd backend && npm run dev)?`
+      : 'Cannot reach AgriFair right now. Check your connection and try again.';
   }
 
   return err?.message || fallback;
@@ -67,6 +69,8 @@ export const loginUser = (data) => API.post('/auth/login', data);
 export const logoutUser = () => API.post('/auth/logout');
 export const resendVerificationEmail = (email) =>
   API.post('/auth/resend-verification', { email });
+/** The token from the emailed verification link. */
+export const verifyEmailLink = (token) => API.post('/auth/verify-email', { token });
 
 // Password reset: email a 6-digit code, trade the code for a short-lived
 // reset token, then set the new password with that token.

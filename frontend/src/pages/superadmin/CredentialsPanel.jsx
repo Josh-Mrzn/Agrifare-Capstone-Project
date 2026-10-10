@@ -1,39 +1,53 @@
 import React, { useCallback, useEffect, useState } from 'react';
-import { BadgeCheck, ShieldAlert, Wallet, FileText, RefreshCw, Clock } from 'lucide-react';
 import { fetchSellerCredentials, reviewCredential } from '../../services/superAdminApi';
+import { getErrorMessage } from '../../services/authApi';
 import PrivateFileModal from '../../components/PrivateFileModal';
-import './CredentialsPanel.css';
+
+const STATE = {
+  pending: { tone: 'warning', label: 'To review' },
+  verified: { tone: 'success', label: 'Approved' },
+  rejected: { tone: 'danger', label: 'Rejected' },
+};
+
+const DOC_LABEL = {
+  BIR: 'BIR Certificate of Registration',
+  DTI: 'DTI Business Name',
+  SEC: 'SEC Registration',
+  MAYORS_PERMIT: "Mayor's or business permit",
+  BARANGAY: 'Barangay clearance',
+  ORGANIC_CERT: 'Organic certification',
+  OTHER: 'Other document',
+};
+
+const stateBadge = (status) => {
+  const s = STATE[status];
+  return <span className={`badge${s ? ` badge-${s.tone}` : ''}`}>{s ? s.label : 'Not submitted'}</span>;
+};
 
 /**
- * Where a seller's GCash account and compliance documents are approved.
+ * Where a seller's GCash account and business documents are checked.
  *
- * Nothing a seller submits is trusted until somebody here has looked at it. A
- * payout that is merely submitted shows the buyer nothing at all — the server
- * withholds the account details until this panel marks it verified — so this
- * is the step that makes GCash appear in the app.
- *
- * Decided credentials stay on this list rather than disappearing. An approval
- * that vanishes cannot be checked later, and a QR that turns out to belong to
- * somebody else has to be revocable.
+ * A GCash account stays hidden from buyers until it is approved here: the
+ * server sends no account number and the app offers cash on delivery
+ * instead. Decided items stay on the list, so an approval can be checked
+ * again later and taken back.
  */
 export default function CredentialsPanel() {
-  const [rows, setRows] = useState([]);
-  const [loading, setLoading] = useState(true);
+  const [rows, setRows] = useState(null);
   const [error, setError] = useState('');
   const [busy, setBusy] = useState('');
   const [reasons, setReasons] = useState({});
   const [viewing, setViewing] = useState(null);
+  const [onlyWaiting, setOnlyWaiting] = useState(true);
 
   const load = useCallback(async () => {
-    setLoading(true);
     try {
       const res = await fetchSellerCredentials();
       setRows(Array.isArray(res.data) ? res.data : []);
       setError('');
     } catch (err) {
-      setError(err.response?.data?.error || 'Could not load the credentials.');
-    } finally {
-      setLoading(false);
+      setError(getErrorMessage(err, 'Could not load the credentials.'));
+      setRows((prev) => prev || []);
     }
   }, []);
 
@@ -42,226 +56,133 @@ export default function CredentialsPanel() {
   }, [load]);
 
   async function decide(userId, body, key) {
-    if (!body.approve && !(reasons[key] || '').trim()) {
-      setError('Give a reason so the seller knows what to fix.');
+    const reason = (reasons[key] || '').trim();
+    if (!body.approve && !reason) {
+      setError('Write a reason first, so the seller knows what to fix.');
       return;
     }
-
     setBusy(key);
     setError('');
     try {
-      await reviewCredential(userId, {
-        ...body,
-        reason: body.approve ? '' : reasons[key].trim(),
-      });
+      await reviewCredential(userId, { ...body, reason: body.approve ? '' : reason });
       setReasons((r) => ({ ...r, [key]: '' }));
       await load();
     } catch (err) {
-      setError(err.response?.data?.error || 'Could not save that decision.');
+      setError(getErrorMessage(err, 'Could not save that decision.'));
     } finally {
       setBusy('');
     }
   }
 
-  /** The badge beside a credential, in the words a reviewer thinks in. */
-  function statusChip(status) {
-    const label = {
-      pending: 'Waiting for review',
-      verified: 'Approved',
-      rejected: 'Rejected',
-    }[status] || 'Not submitted';
+  if (!rows) return <div className="panel"><div className="skeleton-rows"><div className="skeleton" /><div className="skeleton" /></div></div>;
 
-    return <span className={`cp-chip cp-chip--${status || 'unset'}`}>{label}</span>;
-  }
+  const waiting = rows.filter((r) => r.needsReview).length;
+  const shown = onlyWaiting ? rows.filter((r) => r.needsReview) : rows;
 
-  /**
-   * The decision buttons.
-   *
-   * Shown whatever the current status: approving an already-approved account
-   * is harmless, and rejecting one is how an approval gets taken back.
-   */
-  function actions(userId, body, key, status) {
-    const decided = status === 'verified' || status === 'rejected';
-
+  // A render function, not a component: a component defined in here would be
+  // a new type on every render, and the reason box would lose focus per key.
+  function decision(userId, body, keyName, status) {
     return (
-      <div className="cp-actions">
+      <div className="cred-decision">
+        <label className="sr-only" htmlFor={`reason-${keyName}`}>Reason, needed to reject</label>
         <input
-          type="text"
-          className="cp-reason"
-          placeholder="Reason — required to reject"
-          value={reasons[key] || ''}
-          onChange={(e) => setReasons((r) => ({ ...r, [key]: e.target.value }))}
+          id={`reason-${keyName}`}
+          className="input"
+          placeholder="Reason, needed to reject…"
+          autoComplete="off"
+          value={reasons[keyName] || ''}
+          onChange={(e) => setReasons((r) => ({ ...r, [keyName]: e.target.value }))}
         />
+        <button type="button" className="btn btn-secondary btn-sm" disabled={busy === keyName} onClick={() => decide(userId, { ...body, approve: false }, keyName)}>
+          {status === 'verified' ? 'Revoke' : 'Reject'}
+        </button>
         {status !== 'verified' && (
-          <button
-            type="button"
-            className="cp-approve"
-            disabled={busy === key}
-            onClick={() => decide(userId, { ...body, approve: true }, key)}
-          >
-            <BadgeCheck size={14} strokeWidth={2.3} />
-            {busy === key ? 'Saving…' : 'Approve'}
+          <button type="button" className="btn btn-primary btn-sm" disabled={busy === keyName} onClick={() => decide(userId, { ...body, approve: true }, keyName)}>
+            Approve
           </button>
         )}
-        <button
-          type="button"
-          className="cp-reject"
-          disabled={busy === key}
-          onClick={() => decide(userId, { ...body, approve: false }, key)}
-        >
-          <ShieldAlert size={14} strokeWidth={2.3} />
-          {decided && status === 'verified' ? 'Revoke' : 'Reject'}
-        </button>
       </div>
     );
   }
 
-  if (loading) return <div className="sa-tab"><div className="cp-skeleton" /></div>;
-
-  const waiting = rows.filter((r) => r.needsReview).length;
-
   return (
-    <div className="sa-tab">
-      <div className="sa-panel">
-        <div className="sa-panel-head">
-          <h2>Seller credentials</h2>
-          <button className="cp-refresh" type="button" onClick={load}>
-            <RefreshCw size={14} strokeWidth={2.3} /> Refresh
+    <>
+      <div className="page-actions">
+        <div className="chips" role="group" aria-label="Show">
+          <button type="button" className="chip" aria-pressed={onlyWaiting} onClick={() => setOnlyWaiting(true)}>
+            To review <span className="chip-count">{waiting}</span>
+          </button>
+          <button type="button" className="chip" aria-pressed={!onlyWaiting} onClick={() => setOnlyWaiting(false)}>
+            All sellers <span className="chip-count">{rows.length}</span>
           </button>
         </div>
-
-        <p className="cp-lede">
-          A GCash account stays invisible to buyers until it is approved here — the
-          server sends no account number, and the app offers cash on delivery instead.
-          {waiting > 0 && (
-            <>
-              {' '}
-              <strong>
-                {waiting} seller{waiting === 1 ? '' : 's'} waiting on a decision.
-              </strong>
-            </>
-          )}
-        </p>
-
-        {error && <p className="cp-error">{error}</p>}
-
-        {rows.length === 0 ? (
-          <div className="cp-empty">
-            <BadgeCheck size={26} strokeWidth={1.6} />
-            <p>No seller has submitted a payout account or a document yet.</p>
-          </div>
-        ) : (
-          rows.map((seller) => (
-            <div
-              className={`cp-seller ${seller.needsReview ? 'cp-seller--waiting' : ''}`}
-              key={seller.userId}
-            >
-              <div className="cp-seller-head">
-                <div>
-                  <strong>{seller.name}</strong>
-                  <span>
-                    {seller.email} · User ID {seller.userId}
-                    {seller.sellerType ? ` · ${seller.sellerType}` : ''}
-                  </span>
-                </div>
-                {seller.needsReview && (
-                  <span className="cp-waiting">
-                    <Clock size={13} strokeWidth={2.3} /> Needs a decision
-                  </span>
-                )}
-              </div>
-
-              {seller.payout && (
-                <div className="cp-item">
-                  <div className="cp-item-head">
-                    <Wallet size={15} strokeWidth={2.2} />
-                    <strong>Payout account — {seller.payout.method || 'unset'}</strong>
-                    {statusChip(seller.payout.status)}
-                  </div>
-
-                  <dl className="cp-fields">
-                    <div><dt>Account name</dt><dd>{seller.payout.accountName || '—'}</dd></div>
-                    <div><dt>Number</dt><dd>{seller.payout.accountNumber || '—'}</dd></div>
-                    <div>
-                      <dt>QR</dt>
-                      <dd>
-                        {seller.payout.qrImage ? (
-                          <button
-                            type="button"
-                            className="cp-link"
-                            onClick={() => setViewing({
-                              path: seller.payout.qrImage,
-                              title: `GCash QR — ${seller.name}`,
-                            })}
-                          >
-                            Open QR image
-                          </button>
-                        ) : 'Not uploaded'}
-                      </dd>
-                    </div>
-                  </dl>
-
-                  {actions(
-                    seller.userId,
-                    { kind: 'payout' },
-                    `payout-${seller.userId}`,
-                    seller.payout.status,
-                  )}
-                </div>
-              )}
-
-              {seller.documents.map((doc) => (
-                <div className="cp-item" key={doc.type}>
-                  <div className="cp-item-head">
-                    <FileText size={15} strokeWidth={2.2} />
-                    <strong>{doc.label || doc.type}</strong>
-                    {statusChip(doc.status)}
-                  </div>
-
-                  <dl className="cp-fields">
-                    <div><dt>Reference</dt><dd>{doc.referenceNo || '—'}</dd></div>
-                    <div>
-                      <dt>File</dt>
-                      <dd>
-                        {doc.file ? (
-                          <button
-                            type="button"
-                            className="cp-link"
-                            onClick={() => setViewing({
-                              path: doc.file,
-                              title: `${doc.label || doc.type} — ${seller.name}`,
-                            })}
-                          >
-                            Open document
-                          </button>
-                        ) : 'Not uploaded'}
-                      </dd>
-                    </div>
-                    {doc.rejectionReason && (
-                      <div><dt>Rejected because</dt><dd>{doc.rejectionReason}</dd></div>
-                    )}
-                  </dl>
-
-                  {actions(
-                    seller.userId,
-                    { kind: 'document', docType: doc.type },
-                    `${doc.type}-${seller.userId}`,
-                    doc.status,
-                  )}
-                </div>
-              ))}
-            </div>
-          ))
-        )}
       </div>
 
-      {viewing && (
-        <PrivateFileModal
-          path={viewing.path}
-          title={viewing.title}
-          onClose={() => setViewing(null)}
-        />
+      <div className="live" aria-live="polite">{error && <p className="alert alert-danger">{error}</p>}</div>
+
+      {shown.length === 0 && (
+        <section className="panel">
+          <div className="empty">
+            <p>{onlyWaiting ? 'Nothing is waiting for review.' : 'No seller has submitted a GCash account or a document yet.'}</p>
+          </div>
+        </section>
       )}
-    </div>
+
+      {shown.map((seller) => (
+        <section className="panel" key={seller.userId}>
+          <div className="panel-head">
+            <div>
+              <h2>{seller.name}</h2>
+              <p>{seller.email}, ID {seller.userId}{seller.sellerType ? `, ${seller.sellerType}` : ''}</p>
+            </div>
+            {seller.needsReview && <span className="badge badge-warning">Needs a decision</span>}
+          </div>
+          <ul className="list">
+            {seller.payout && (
+              <li className="cred-item">
+                <div className="cred-head">
+                  <strong>GCash account</strong>
+                  {stateBadge(seller.payout.status)}
+                </div>
+                <dl className="dl">
+                  <div><dt>Account name</dt><dd>{seller.payout.accountName || 'Not given'}</dd></div>
+                  <div><dt>Number</dt><dd className="num">{seller.payout.accountNumber || 'Not given'}</dd></div>
+                </dl>
+                {seller.payout.qrImage && (
+                  <div>
+                    <button type="button" className="btn btn-ghost btn-sm" onClick={() => setViewing({ path: seller.payout.qrImage, title: `GCash QR, ${seller.name}` })}>
+                      View QR code
+                    </button>
+                  </div>
+                )}
+                {decision(seller.userId, { kind: 'payout' }, `payout-${seller.userId}`, seller.payout.status)}
+              </li>
+            )}
+            {seller.documents.map((doc) => (
+              <li className="cred-item" key={doc.type}>
+                <div className="cred-head">
+                  <strong>{doc.label || DOC_LABEL[doc.type] || doc.type}</strong>
+                  {stateBadge(doc.status)}
+                </div>
+                <dl className="dl">
+                  <div><dt>Reference no.</dt><dd>{doc.referenceNo || 'Not given'}</dd></div>
+                  {doc.rejectionReason && <div><dt>Rejected because</dt><dd>{doc.rejectionReason}</dd></div>}
+                </dl>
+                {doc.file && (
+                  <div>
+                    <button type="button" className="btn btn-ghost btn-sm" onClick={() => setViewing({ path: doc.file, title: `${doc.label || DOC_LABEL[doc.type] || doc.type}, ${seller.name}` })}>
+                      View document
+                    </button>
+                  </div>
+                )}
+                {decision(seller.userId, { kind: 'document', docType: doc.type }, `${doc.type}-${seller.userId}`, doc.status)}
+              </li>
+            ))}
+          </ul>
+        </section>
+      ))}
+
+      {viewing && <PrivateFileModal path={viewing.path} title={viewing.title} onClose={() => setViewing(null)} />}
+    </>
   );
 }

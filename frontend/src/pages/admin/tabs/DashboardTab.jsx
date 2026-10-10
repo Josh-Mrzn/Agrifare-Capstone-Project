@@ -1,258 +1,180 @@
 import React, { useEffect, useState } from 'react';
+import { Boxes, ChevronRight, Package, ShoppingCart, Wallet } from 'lucide-react';
+import BarList from '../../../components/BarList';
 import {
-  Wallet,
-  ShoppingCart,
-  Package,
-  ClipboardList,
-  TrendingUp,
-  TrendingDown,
-  AlertTriangle,
-  Truck,
-  CheckCircle2,
-  Inbox,
-  ArrowRight,
-} from 'lucide-react';
-import { fetchMyProducts, fetchInventorySummary, fetchMyOrders, fetchMyOrderAnalytics } from '../../../services/clientApi';
+  fetchMyProducts, fetchInventorySummary, fetchMyOrders, fetchMyOrderAnalytics,
+} from '../../../services/clientApi';
+import { wholePeso, number, formatDate, monthName } from '../../../utils/format';
+import { STATUS_LABEL, statusBadge } from '../orderStatus';
 
-const MONTH_LABELS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+const asList = (data, key) => (Array.isArray(data) ? data : data?.[key] || []);
 
 export default function DashboardTab({ onNavigate }) {
-  const [products, setProducts] = useState([]);
-  const [inventory, setInventory] = useState(null);
-  const [orders, setOrders] = useState([]);
-  const [analytics, setAnalytics] = useState(null);
-  const [loading, setLoading] = useState(true);
+  const [data, setData] = useState(null);
 
   useEffect(() => {
     let mounted = true;
-    (async () => {
-      try {
-        const [prodRes, invRes, ordRes, anaRes] = await Promise.all([
-          fetchMyProducts().catch(() => ({ data: [] })),
-          fetchInventorySummary().catch(() => ({ data: null })),
-          fetchMyOrders().catch(() => ({ data: [] })),
-          fetchMyOrderAnalytics().catch(() => ({ data: null })),
-        ]);
-        if (!mounted) return;
-        setProducts(prodRes.data?.products || prodRes.data || []);
-        setInventory(invRes.data);
-        setOrders(ordRes.data?.orders || ordRes.data || []);
-        setAnalytics(anaRes.data);
-      } finally {
-        if (mounted) setLoading(false);
-      }
-    })();
+    Promise.all([
+      fetchMyProducts().catch(() => ({ data: [] })),
+      fetchInventorySummary().catch(() => ({ data: null })),
+      fetchMyOrders().catch(() => ({ data: [] })),
+      fetchMyOrderAnalytics().catch(() => ({ data: null })),
+    ]).then(([prod, inv, ord, ana]) => {
+      if (!mounted) return;
+      setData({
+        products: asList(prod.data, 'products'),
+        inventory: inv.data,
+        orders: asList(ord.data, 'orders'),
+        analytics: ana.data,
+      });
+    });
     return () => { mounted = false; };
   }, []);
 
-  const pendingOrders = orders.filter((o) => o.status === 'pending');
-  const readyToShip = orders.filter((o) => o.status === 'processing');
-  const lowStockProducts = products.filter((p) => p.status !== 'inactive' && p.stock <= (p.lowStockThreshold ?? 20) && p.stock > 0);
+  if (!data) {
+    return (
+      <>
+        <div className="skeleton" style={{ height: 96 }} />
+        <div className="skeleton" style={{ height: 280 }} />
+      </>
+    );
+  }
+
+  const { products, inventory, orders, analytics } = data;
+  const pending = orders.filter((o) => o.status === 'pending');
+  const receipts = orders.filter((o) => o.paymentStatus === 'proof_sent' && o.status !== 'cancelled');
+  const toShip = orders.filter((o) => o.status === 'processing');
+  const lowStock = products.filter(
+    (p) => p.status !== 'inactive' && p.stock > 0 && p.stock <= (p.lowStockThreshold ?? 20),
+  );
+  const soldOut = products.filter((p) => p.status !== 'inactive' && p.stock <= 0);
   const activeProducts = products.filter((p) => p.status !== 'inactive');
 
-  const monthlyIncome = analytics?.monthlyIncome || [];
-  const salesChange = (() => {
-    if (monthlyIncome.length < 2) return null;
-    const latest = monthlyIncome[monthlyIncome.length - 1].income;
-    const prev = monthlyIncome[monthlyIncome.length - 2].income;
-    if (!prev) return null;
-    return Math.round(((latest - prev) / prev) * 100);
+  const monthly = analytics?.monthlyIncome || [];
+  const change = (() => {
+    if (monthly.length < 2) return null;
+    const [prev, last] = monthly.slice(-2).map((m) => m.income);
+    return prev ? Math.round(((last - prev) / prev) * 100) : null;
   })();
-  const maxIncome = monthlyIncome.length ? Math.max(...monthlyIncome.map((m) => m.income), 1) : 1;
 
-  const recentOrders = [...orders]
-    .sort((a, b) => new Date(b.orderDate) - new Date(a.orderDate))
-    .slice(0, 5);
+  const todo = [
+    pending.length && { id: 'pending', to: 'orders', text: `${pending.length} new order${pending.length > 1 ? 's' : ''} to accept` },
+    receipts.length && { id: 'receipts', to: 'orders', text: `${receipts.length} GCash receipt${receipts.length > 1 ? 's' : ''} to check` },
+    toShip.length && { id: 'ship', to: 'orders', text: `${toShip.length} order${toShip.length > 1 ? 's' : ''} ready to send out` },
+    lowStock.length && { id: 'low', to: 'inventory', text: `${lowStock.length} product${lowStock.length > 1 ? 's' : ''} running low` },
+    soldOut.length && { id: 'out', to: 'inventory', text: `${soldOut.length} product${soldOut.length > 1 ? 's' : ''} sold out` },
+  ].filter(Boolean);
+
+  const recent = [...orders].sort((a, b) => new Date(b.orderDate) - new Date(a.orderDate)).slice(0, 6);
 
   return (
-    <div className="ap-tab-content">
-      {loading ? (
-        <div className="ap-skeleton-grid">
-          {[0, 1, 2, 3].map((i) => <div key={i} className="ap-skeleton" style={{ height: 118 }} />)}
-        </div>
-      ) : (
-        <>
-          <div className="ap-stats-grid">
-            <button className="ap-stat-card ap-stat--green" type="button" onClick={() => onNavigate?.('Analytics')}>
-              <span className="ap-stat-icon"><Wallet size={20} strokeWidth={2.2} /></span>
-              <span className="ap-stat-label">Total sales</span>
-              <span className="ap-stat-value">
-                <small>₱</small>{Number(analytics?.totalSales || 0).toLocaleString()}
-              </span>
-              <span className="ap-stat-foot">
-                {salesChange != null ? (
-                  <>
-                    <span className={`ap-delta ${salesChange >= 0 ? 'up' : 'down'}`}>
-                      {salesChange >= 0
-                        ? <TrendingUp size={13} strokeWidth={2.5} />
-                        : <TrendingDown size={13} strokeWidth={2.5} />}
-                      {Math.abs(salesChange)}%
-                    </span>
-                    vs last month
-                  </>
-                ) : 'No prior month to compare'}
-              </span>
-            </button>
+    <>
+      <div className="stats">
+        <button type="button" className="stat" onClick={() => onNavigate('analytics')}>
+          <span className="stat-icon"><Wallet size={19} aria-hidden="true" /></span>
+          <span className="stat-label">Sales</span>
+          <span className="stat-value">{wholePeso(analytics?.totalSales)}</span>
+          <span className={`stat-note${change > 0 ? ' is-up' : change < 0 ? ' is-down' : ''}`}>
+            {change == null ? 'From completed orders' : `${change > 0 ? '+' : ''}${change}% vs last month`}
+          </span>
+        </button>
+        <button type="button" className="stat stat--gold" onClick={() => onNavigate('orders')}>
+          <span className="stat-icon"><ShoppingCart size={19} aria-hidden="true" /></span>
+          <span className="stat-label">New orders</span>
+          <span className="stat-value">{number(pending.length)}</span>
+          <span className="stat-note">Waiting for you to accept</span>
+        </button>
+        <button type="button" className="stat" onClick={() => onNavigate('products')}>
+          <span className="stat-icon"><Package size={19} aria-hidden="true" /></span>
+          <span className="stat-label">Products for sale</span>
+          <span className="stat-value">{number(activeProducts.length)}</span>
+          <span className="stat-note">
+            {products.length - activeProducts.length > 0
+              ? `${products.length - activeProducts.length} hidden from buyers`
+              : 'All listings are visible'}
+          </span>
+        </button>
+        <button type="button" className="stat stat--gold" onClick={() => onNavigate('inventory')}>
+          <span className="stat-icon"><Boxes size={19} aria-hidden="true" /></span>
+          <span className="stat-label">Rice in stock</span>
+          <span className="stat-value">{number(inventory?.totalStock)}<small>kg</small></span>
+          <span className={`stat-note${lowStock.length ? ' is-warn' : ''}`}>
+            {lowStock.length ? `${lowStock.length} running low` : 'Stock levels are fine'}
+          </span>
+        </button>
+      </div>
 
-            <button className="ap-stat-card ap-stat--gold" type="button" onClick={() => onNavigate?.('Orders')}>
-              <span className="ap-stat-icon"><ShoppingCart size={20} strokeWidth={2.2} /></span>
-              <span className="ap-stat-label">Pending orders</span>
-              <span className="ap-stat-value">{pendingOrders.length}</span>
-              <span className="ap-stat-foot">
-                {pendingOrders.length ? 'Waiting for your confirmation' : 'Nothing waiting'}
-              </span>
-            </button>
+      <div className="dash-grid">
+        <div className="stack">
+          <section className="panel">
+            <div className="panel-head"><div><span className="eyebrow">Needs you</span><h2>To do</h2></div></div>
+            {todo.length === 0 ? (
+              <div className="empty"><p>You are all caught up.</p></div>
+            ) : (
+              <ul className="list">
+                {todo.map((item) => (
+                  <li key={item.id}>
+                    <button type="button" className="list-row" onClick={() => onNavigate(item.to)}>
+                      <span className="list-row-main"><strong>{item.text}</strong></span>
+                      <ChevronRight size={16} className="muted" aria-hidden="true" />
+                    </button>
+                  </li>
+                ))}
+              </ul>
+            )}
+          </section>
 
-            <button className="ap-stat-card ap-stat--teal" type="button" onClick={() => onNavigate?.('Products')}>
-              <span className="ap-stat-icon"><Package size={20} strokeWidth={2.2} /></span>
-              <span className="ap-stat-label">Active products</span>
-              <span className="ap-stat-value">{activeProducts.length}</span>
-              <span className="ap-stat-foot">
-                {products.length !== activeProducts.length
-                  ? `${products.length - activeProducts.length} inactive`
-                  : 'All listings are live'}
-              </span>
-            </button>
-
-            <button className="ap-stat-card ap-stat--plum" type="button" onClick={() => onNavigate?.('Inventory')}>
-              <span className="ap-stat-icon"><ClipboardList size={20} strokeWidth={2.2} /></span>
-              <span className="ap-stat-label">Inventory</span>
-              <span className="ap-stat-value">
-                {inventory ? inventory.totalStock.toLocaleString() : '—'}
-                {inventory && <small className="ap-stat-unit">kg</small>}
-              </span>
-              <span className="ap-stat-foot">
-                {inventory && inventory.lowStockCount > 0 ? (
-                  <span className="ap-delta down">
-                    <AlertTriangle size={13} strokeWidth={2.5} />
-                    {inventory.lowStockCount} low stock
-                  </span>
-                ) : 'Stock levels are healthy'}
-              </span>
-            </button>
-          </div>
-
-          <div className="ap-dash-grid">
-            <div className="ap-dash-col">
-              <div className="ap-panel">
-                <div className="ap-panel-header">
-                  <div>
-                    <span className="ap-panel-tag">Revenue</span>
-                    <h2>Monthly sales</h2>
-                  </div>
-                </div>
-                {monthlyIncome.length === 0 ? (
-                  <div className="ap-empty-state">
-                    <TrendingUp size={26} strokeWidth={1.6} />
-                    <p>No completed sales yet. Your revenue trend will appear here.</p>
-                  </div>
-                ) : (
-                  <div className="ap-income-bars">
-                    {monthlyIncome.map((m) => (
-                      <div className="ap-income-bar-row" key={`${m.year}-${m.month}`}>
-                        <span className="ap-income-bar-label">{MONTH_LABELS[m.month - 1]}</span>
-                        <div className="ap-income-bar-track">
-                          <div className="ap-income-bar-fill" style={{ width: `${Math.max(4, (m.income / maxIncome) * 100)}%` }} />
-                        </div>
-                        <span className="ap-income-bar-value">₱{Number(m.income).toLocaleString()}</span>
-                      </div>
-                    ))}
-                  </div>
-                )}
-              </div>
-
-              <div className="ap-panel">
-                <div className="ap-panel-header">
-                  <div>
-                    <span className="ap-panel-tag">Needs you</span>
-                    <h2>Action items</h2>
-                  </div>
-                </div>
-                {pendingOrders.length === 0 && lowStockProducts.length === 0 && readyToShip.length === 0 ? (
-                  <div className="ap-empty-state">
-                    <CheckCircle2 size={26} strokeWidth={1.6} />
-                    <p>You&apos;re all caught up — nothing needs attention right now.</p>
-                  </div>
-                ) : (
-                  <ul className="ap-action-list">
-                    {pendingOrders.length > 0 && (
-                      <li className="ap-action-item urgent">
-                        <button type="button" onClick={() => onNavigate?.('Orders')}>
-                          <span className="ap-action-icon"><ShoppingCart size={16} strokeWidth={2.3} /></span>
-                          <span className="ap-action-text">
-                            <strong>{pendingOrders.length} pending order{pendingOrders.length !== 1 ? 's' : ''}</strong>
-                            <span>Waiting for your confirmation.</span>
-                          </span>
-                          <ArrowRight size={16} strokeWidth={2.3} className="ap-action-go" />
-                        </button>
-                      </li>
-                    )}
-                    {lowStockProducts.length > 0 && (
-                      <li className="ap-action-item warn">
-                        <button type="button" onClick={() => onNavigate?.('Inventory')}>
-                          <span className="ap-action-icon"><AlertTriangle size={16} strokeWidth={2.3} /></span>
-                          <span className="ap-action-text">
-                            <strong>{lowStockProducts.length} product{lowStockProducts.length !== 1 ? 's' : ''} running low</strong>
-                            <span>Restock before they sell out.</span>
-                          </span>
-                          <ArrowRight size={16} strokeWidth={2.3} className="ap-action-go" />
-                        </button>
-                      </li>
-                    )}
-                    {readyToShip.length > 0 && (
-                      <li className="ap-action-item">
-                        <button type="button" onClick={() => onNavigate?.('Orders')}>
-                          <span className="ap-action-icon"><Truck size={16} strokeWidth={2.3} /></span>
-                          <span className="ap-action-text">
-                            <strong>{readyToShip.length} order{readyToShip.length !== 1 ? 's' : ''} ready to ship</strong>
-                            <span>Processing is done — send them out.</span>
-                          </span>
-                          <ArrowRight size={16} strokeWidth={2.3} className="ap-action-go" />
-                        </button>
-                      </li>
-                    )}
-                  </ul>
-                )}
-              </div>
-            </div>
-
-            <div className="ap-panel">
-              <div className="ap-panel-header">
-                <div>
-                  <span className="ap-panel-tag">Latest</span>
-                  <h2>Recent orders</h2>
-                </div>
-                <button className="ap-btn-ghost" type="button" onClick={() => onNavigate?.('Orders')}>View all</button>
-              </div>
-              {recentOrders.length === 0 ? (
-                <div className="ap-empty-state">
-                  <Inbox size={26} strokeWidth={1.6} />
-                  <p>No orders yet.</p>
-                </div>
+          <section className="panel">
+            <div className="panel-head"><div><span className="eyebrow">Revenue</span><h2>Sales by month</h2></div></div>
+            <div className="panel-body">
+              {monthly.length === 0 ? (
+                <p className="muted">Completed orders will show here, month by month.</p>
               ) : (
-                <div className="ap-table-wrap">
-                  <table className="ap-table">
-                    <thead>
-                      <tr><th>Order</th><th>Buyer</th><th>Amount</th><th>Status</th><th>Date</th></tr>
-                    </thead>
-                    <tbody>
-                      {recentOrders.map((o) => (
-                        <tr key={o._id}>
-                          <td>{o.orderNumber}</td>
-                          <td>{o.customerName}</td>
-                          <td>₱{Number(o.total).toLocaleString()}</td>
-                          <td><span className={`ap-badge ap-badge-${o.status}`}>{o.status}</span></td>
-                          <td>{new Date(o.orderDate).toLocaleDateString()}</td>
-                        </tr>
-                      ))}
-                    </tbody>
-                  </table>
-                </div>
+                <BarList
+                  label="Sales by month"
+                  rows={monthly.map((m) => ({ key: `${m.year}-${m.month}`, label: monthName(m.month), value: m.income }))}
+                  format={wholePeso}
+                />
               )}
             </div>
+          </section>
+        </div>
+
+        <section className="panel">
+          <div className="panel-head">
+            <div><span className="eyebrow">Latest</span><h2>Recent orders</h2></div>
+            <button className="btn btn-ghost btn-sm" type="button" onClick={() => onNavigate('orders')}>
+              All orders
+            </button>
           </div>
-        </>
-      )}
-    </div>
+          {recent.length === 0 ? (
+            <div className="empty">
+              <strong>No orders yet</strong>
+              <p>Orders from the app appear here as soon as a buyer checks out.</p>
+            </div>
+          ) : (
+            <div className="table-wrap">
+              <table className="table table-stack">
+                <thead>
+                  <tr><th>Order</th><th>Status</th><th className="is-num">Total</th><th>Date</th></tr>
+                </thead>
+                <tbody>
+                  {recent.map((o) => (
+                    <tr key={o._id}>
+                      <td className="is-primary">
+                        <span className="cell-main"><strong>{o.orderNumber}</strong><span>{o.customerName}</span></span>
+                      </td>
+                      <td data-label="Status"><span className={statusBadge(o.status)}>{STATUS_LABEL[o.status] || o.status}</span></td>
+                      <td data-label="Total" className="is-num">{wholePeso(o.total)}</td>
+                      <td data-label="Date" className="muted">{formatDate(o.orderDate)}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          )}
+        </section>
+      </div>
+    </>
   );
 }

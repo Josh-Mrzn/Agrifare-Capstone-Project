@@ -1,3 +1,4 @@
+import { lazy, Suspense } from 'react';
 import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom';
 
 import LandingPage from './pages/LandingPage.jsx';
@@ -5,17 +6,15 @@ import LoginPage from './pages/landing/LoginPage.jsx';
 import RegisterPage from './pages/landing/RegisterPage.jsx';
 import ForgotPasswordPage from './pages/landing/ForgotPasswordPage.jsx';
 
-import AdminPage from './pages/admin/AdminPage.jsx';
-import SuperAdminPage from './pages/superadmin/SuperAdminPage.jsx';
-import RiderPage from './pages/rider/RiderPage.jsx';
-import ActivatePage from './pages/rider/ActivatePage.jsx';
-import { getHomePath, getSessionUser, clearSession } from './utils/auth.js';
+// Signed-in areas load on demand, so the landing page does not carry the
+// portals (and the map library) for visitors who never sign in.
+const AdminPage = lazy(() => import('./pages/admin/AdminPage.jsx'));
+const SuperAdminPage = lazy(() => import('./pages/superadmin/SuperAdminPage.jsx'));
+const RiderPage = lazy(() => import('./pages/rider/RiderPage.jsx'));
+const ActivatePage = lazy(() => import('./pages/rider/ActivatePage.jsx'));
+import { getHomePath, getSessionUser, getToken } from './utils/auth.js';
 
-const getAuth = () => {
-  const token = sessionStorage.getItem('token');
-  const user = getSessionUser();
-  return { token, user };
-};
+const getAuth = () => ({ token: getToken(), user: getSessionUser() });
 
 function ProtectedRoute({ children, role }) {
   const { token, user } = getAuth();
@@ -52,12 +51,9 @@ function HomeRedirect() {
 }
 
 export default function App() {
-  const handleLogout = () => {
-    clearSession();
-  };
-
   return (
     <BrowserRouter>
+      <Suspense fallback={<div className="page-loading" aria-busy="true" aria-label="Loading" />}>
       <Routes>
         <Route path="/" element={<HomeRedirect />} />
 
@@ -88,13 +84,13 @@ export default function App() {
 
         <Route path="/client" element={
           <ProtectedRoute role="seller">
-            <AdminPage onLogout={handleLogout} />
+            <AdminPage />
           </ProtectedRoute>
         } />
 
         <Route path="/superadmin" element={
           <ProtectedRoute role="superadmin">
-            <SuperAdminPage onLogout={handleLogout} />
+            <SuperAdminPage />
           </ProtectedRoute>
         } />
 
@@ -108,6 +104,7 @@ export default function App() {
 
         <Route path="*" element={<Navigate to="/" replace />} />
       </Routes>
+      </Suspense>
     </BrowserRouter>
   );
 }

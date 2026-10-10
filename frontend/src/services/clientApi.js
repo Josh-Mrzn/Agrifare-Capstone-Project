@@ -34,3 +34,14 @@ export const fetchStockMovements = (id) => API.get(`/admin/inventory/${id}/movem
 export const reviewOrderPayment = (id, data) => API.put(`/admin/orders/${id}/payment`, data);
 export const emailReport = (type) => API.post(`/admin/reports/${type}/email`);
 export const fetchMailStatus = () => API.get('/admin/reports/mail-status');
+
+/** An outside courier (LBC, J&T, Lalamove) with its tracking number. */
+export const setOrderCourier = (id, data) => API.put(`/admin/orders/${id}/courier`, data);
+
+/** The seller's own photo at the door, for an order their courier carried. */
+export const uploadSellerDeliveryProof = (id, file, note) => {
+  const fd = new FormData();
+  fd.append('proof', file);
+  if (note) fd.append('note', note);
+  return API.post(`/admin/orders/${id}/delivered`, fd, { headers: { 'Content-Type': 'multipart/form-data' } });
+};

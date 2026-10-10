@@ -1,218 +1,138 @@
-import React from 'react';
-import {
-  UserPlus,
-  UserMinus,
-  ShieldOff,
-  ShieldCheck,
-  BadgeCheck,
-  PencilLine,
-  Activity,
-  RotateCw,
-  ScrollText,
-} from 'lucide-react';
-import './AuditLogPanel.css';
+import React, { useCallback, useEffect, useState } from 'react';
+import { fetchAuditLogs } from '../../services/superAdminApi';
+import { formatDate, formatTime, formatDateTime } from '../../utils/format';
 
-const AUDIT_ACTIONS = [
-  'CREATE_USER',
-  'UPDATE_USER',
-  'SUSPEND_USER',
-  'ACTIVATE_USER',
-  'APPROVE_SELLER',
-  'DELETE_USER',
-];
-
-const ACTION_META = {
-  CREATE_USER:    { icon: UserPlus,    tone: 'green',   label: 'Account created' },
-  UPDATE_USER:    { icon: PencilLine,  tone: 'neutral', label: 'Account updated' },
-  SUSPEND_USER:   { icon: ShieldOff,   tone: 'amber',   label: 'Access suspended' },
-  ACTIVATE_USER:  { icon: ShieldCheck, tone: 'teal',    label: 'Access restored' },
-  APPROVE_SELLER: { icon: BadgeCheck,  tone: 'gold',    label: 'Seller approved' },
-  DELETE_USER:    { icon: UserMinus,   tone: 'red',     label: 'Account deleted' },
+const ACTIONS = {
+  CREATE_USER: 'Account created',
+  UPDATE_USER: 'Account edited',
+  SUSPEND_USER: 'Account suspended',
+  ACTIVATE_USER: 'Account reinstated',
+  APPROVE_SELLER: 'Seller approved',
+  REJECT_SELLER: 'Seller rejected',
+  DELETE_USER: 'Account deleted',
 };
 
-function metaFor(action) {
-  return ACTION_META[action] || { icon: Activity, tone: 'neutral', label: action.replace(/_/g, ' ') };
-}
+const TONE = {
+  SUSPEND_USER: 'warning',
+  DELETE_USER: 'danger',
+  REJECT_SELLER: 'danger',
+  APPROVE_SELLER: 'success',
+  CREATE_USER: 'success',
+  ACTIVATE_USER: 'success',
+};
 
-function relativeTime(value) {
-  const then = new Date(value);
-  const mins = Math.round((Date.now() - then.getTime()) / 60000);
-
-  if (mins < 1) return 'Just now';
-  if (mins < 60) return `${mins}m ago`;
-
-  const hours = Math.round(mins / 60);
-  if (hours < 24) return `${hours}h ago`;
-
-  return then.toLocaleTimeString('en-PH', { hour: 'numeric', minute: '2-digit' });
-}
-
-function exactTime(value) {
-  return new Date(value).toLocaleString('en-PH', {
-    year: 'numeric', month: 'short', day: 'numeric',
-    hour: 'numeric', minute: '2-digit',
-  });
-}
-
-/** "Today" / "Yesterday" / "August 21, 2026" — the heading entries group under. */
-function dayLabel(value) {
-  const d = new Date(value);
-  const today = new Date();
-  const yesterday = new Date();
-  yesterday.setDate(today.getDate() - 1);
-
-  const sameDay = (a, b) => a.toDateString() === b.toDateString();
-  if (sameDay(d, today)) return 'Today';
-  if (sameDay(d, yesterday)) return 'Yesterday';
-
-  return d.toLocaleDateString('en-PH', { month: 'long', day: 'numeric', year: 'numeric' });
-}
-
-const Who = ({ children }) => <span className="al-who">{children}</span>;
-
-/**
- * The headline says WHAT happened to WHOM. The icon already carries the action
- * type and the meta line carries WHO did it, so nothing is stated twice — the
- * old table repeated the verb in both the pill and the sentence.
- */
-function headlineFor(log) {
-  const target = <Who>{log.targetName}</Who>;
+/** What happened, to whom, in words. */
+function sentence(log) {
+  const who = log.targetName || log.targetEmail || `account ${log.targetId}`;
   const role = log.targetRole ? `${log.targetRole} ` : '';
-
   switch (log.action) {
-    case 'CREATE_USER':
-      return <>{target} was added as a new {role}account.</>;
-    case 'UPDATE_USER':
-      return <>{target} had their account details updated.</>;
-    case 'SUSPEND_USER':
-      return <>{target} was suspended and can no longer sign in.</>;
-    case 'ACTIVATE_USER':
-      return <>Access was restored for {target}.</>;
-    case 'APPROVE_SELLER':
-      return <>{target} was approved as a verified seller.</>;
-    case 'DELETE_USER':
-      return <>{target} was permanently removed from the platform.</>;
-    default:
-      return <>{target} — {log.action.replace(/_/g, ' ').toLowerCase()}.</>;
+    case 'CREATE_USER': return `${who} was added as a new ${role}account.`;
+    case 'UPDATE_USER': return `${who}'s account details were changed.`;
+    case 'SUSPEND_USER': return `${who} was suspended and can no longer sign in.`;
+    case 'ACTIVATE_USER': return `${who} can sign in again.`;
+    case 'APPROVE_SELLER': return `${who} was approved as a seller.`;
+    case 'REJECT_SELLER': return `${who}'s seller application was rejected. ${log.details?.replace(/^Seller application rejected:\s*/, 'Reason: ') || ''}`;
+    case 'DELETE_USER': return `${who} was removed from AgriFair.`;
+    default: return `${who}: ${log.action.replace(/_/g, ' ').toLowerCase()}.`;
   }
 }
 
-/** Consecutive entries from the same calendar day share one heading. */
-function groupByDay(items) {
+/** "Today", "Yesterday" or the date: the heading entries are grouped under. */
+function dayLabel(value) {
+  const d = new Date(value);
+  const today = new Date();
+  const yesterday = new Date(Date.now() - 86400000);
+  if (d.toDateString() === today.toDateString()) return 'Today';
+  if (d.toDateString() === yesterday.toDateString()) return 'Yesterday';
+  return formatDate(d);
+}
+
+function groupByDay(logs) {
   const groups = [];
-  for (const log of items) {
+  for (const log of logs) {
     const label = dayLabel(log.createdAt);
     const last = groups[groups.length - 1];
-    if (last && last.label === label) last.items.push(log);
+    if (last?.label === label) last.items.push(log);
     else groups.push({ label, items: [log] });
   }
   return groups;
 }
 
-export default function AuditLogPanel({
-  logs,
-  loading,
-  page,
-  totalPages,
-  actionFilter,
-  onFilterChange,
-  onRefresh,
-  onLoadMore,
-}) {
-  const isEmpty = !loading && logs.length === 0;
-  const groups = groupByDay(logs);
+export default function AuditLogPanel() {
+  const [logs, setLogs] = useState(null);
+  const [page, setPage] = useState(1);
+  const [pages, setPages] = useState(1);
+  const [action, setAction] = useState('');
+  const [loading, setLoading] = useState(false);
+
+  const load = useCallback(async (nextPage, filter, append) => {
+    setLoading(true);
+    try {
+      const res = await fetchAuditLogs({ page: nextPage, limit: 25, action: filter || undefined });
+      const data = res.data || {};
+      setLogs((prev) => (append ? [...(prev || []), ...(data.logs || [])] : data.logs || []));
+      setPage(data.page || 1);
+      setPages(data.totalPages || 1);
+    } catch {
+      if (!append) setLogs([]);
+    } finally {
+      setLoading(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    load(1, action, false);
+  }, [load, action]);
 
   return (
-    <section className="al-panel">
-      <header className="al-head">
-        <div className="al-head-text">
-          <span className="al-tag">History</span>
-          <h2>Audit logs</h2>
+    <section className="panel">
+      <div className="panel-head">
+        <div>
+          <h2>Audit log</h2>
+          <p>Every change a Super Admin made to an account.</p>
         </div>
+        <label className="sr-only" htmlFor="audit-filter">Show</label>
+        <select id="audit-filter" className="select audit-filter" value={action} onChange={(e) => setAction(e.target.value)}>
+          <option value="">All changes</option>
+          {Object.entries(ACTIONS).map(([id, label]) => <option key={id} value={id}>{label}</option>)}
+        </select>
+      </div>
 
-        <div className="al-head-actions">
-          <select
-            className="al-select"
-            value={actionFilter}
-            onChange={(e) => onFilterChange(e.target.value)}
-            aria-label="Filter by action"
-          >
-            <option value="">All actions</option>
-            {AUDIT_ACTIONS.map((a) => (
-              <option key={a} value={a}>{metaFor(a).label}</option>
-            ))}
-          </select>
-          <button className="al-refresh" type="button" onClick={onRefresh} disabled={loading}>
-            <RotateCw size={15} strokeWidth={2.3} className={loading ? 'al-spin' : ''} />
-            Refresh
-          </button>
-        </div>
-      </header>
-
-      {isEmpty ? (
-        <div className="al-empty">
-          <ScrollText size={30} strokeWidth={1.6} />
-          <p>
-            {actionFilter
-              ? 'No entries match this filter yet.'
-              : 'No account activity has been recorded yet.'}
-          </p>
-        </div>
+      {!logs ? (
+        <div className="skeleton-rows"><div className="skeleton" /><div className="skeleton" /><div className="skeleton" /></div>
+      ) : logs.length === 0 ? (
+        <div className="empty"><p>{action ? 'No changes of this kind yet.' : 'Nothing has been recorded yet.'}</p></div>
       ) : (
-        <div className="al-scroll">
-          {loading && logs.length === 0 ? (
-            <div className="al-loading">
-              {[0, 1, 2, 3, 4].map((i) => <div key={i} className="al-skeleton" />)}
-            </div>
-          ) : (
-            groups.map((group) => (
-              <div className="al-group" key={group.label}>
-                <div className="al-day">{group.label}</div>
-
-                {group.items.map((log) => {
-                  const meta = metaFor(log.action);
-                  const Icon = meta.icon;
-                  const showEmail = log.targetEmail && log.targetEmail !== log.targetName;
-
-                  return (
-                    <article className="al-entry" key={log.id}>
-                      <span className={`al-icon al-icon--${meta.tone}`}>
-                        <Icon size={15} strokeWidth={2.3} />
+        <>
+          {groupByDay(logs).map((group) => (
+            <div key={group.label} className="audit-day">
+              <h3 className="audit-day-label">{group.label}</h3>
+              <ul className="list">
+                {group.items.map((log) => (
+                  <li key={log.id || log._id} className="list-row audit-row">
+                    <span className="list-row-main">
+                      <strong>{sentence(log)}</strong>
+                      <span>
+                        <span className={`badge${TONE[log.action] ? ` badge-${TONE[log.action]}` : ''}`}>{ACTIONS[log.action] || log.action}</span>
+                        {' '}by {log.adminName || 'a Super Admin'}
                       </span>
-
-                      <div className="al-entry-body">
-                        <p className="al-headline">{headlineFor(log)}</p>
-                        <p className="al-meta">
-                          <span>by {log.adminName}</span>
-                          {showEmail && <span className="al-sep">{log.targetEmail}</span>}
-                          {log.targetDeleted && log.action !== 'DELETE_USER' && (
-                            <span className="al-sep">account since removed</span>
-                          )}
-                        </p>
-                      </div>
-
-                      <time
-                        className="al-time"
-                        dateTime={log.createdAt}
-                        title={exactTime(log.createdAt)}
-                      >
-                        {relativeTime(log.createdAt)}
-                      </time>
-                    </article>
-                  );
-                })}
-              </div>
-            ))
-          )}
-
-          {page < totalPages && (
-            <div className="al-more">
-              <button type="button" onClick={onLoadMore} disabled={loading}>
-                {loading ? 'Loading…' : 'Load older entries'}
+                    </span>
+                    <time className="muted num" dateTime={log.createdAt} title={formatDateTime(log.createdAt)}>
+                      {formatTime(log.createdAt)}
+                    </time>
+                  </li>
+                ))}
+              </ul>
+            </div>
+          ))}
+          {page < pages && (
+            <div className="panel-foot">
+              <button type="button" className="btn btn-secondary btn-sm" disabled={loading} onClick={() => load(page + 1, action, true)}>
+                {loading ? 'Loading…' : 'Show older entries'}
               </button>
             </div>
           )}
-        </div>
+        </>
       )}
     </section>
   );

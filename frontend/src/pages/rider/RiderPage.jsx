@@ -1,14 +1,15 @@
 import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import {
-  Truck, MapPin, Store, Camera, Navigation, LogOut, CheckCircle2, Phone, RefreshCw,
-} from 'lucide-react';
+import { Camera, Navigation, LogOut, Phone, RefreshCw } from 'lucide-react';
+import logoImg from '../../assets/logo.png';
+import { peso, quantityLabel } from '../../utils/format';
 import {
   fetchMyDeliveries,
   pushMyLocation,
   uploadDeliveryProof,
 } from '../../services/riderApi';
 import { clearSession, getSessionUser } from '../../utils/auth';
+import { getErrorMessage } from '../../services/authApi';
 import './RiderPage.css';
 
 /**
@@ -21,6 +22,13 @@ import './RiderPage.css';
  * They see only the orders assigned to them. Working for the seller is not
  * enough on its own - assignment is what opens one.
  */
+
+const STATUS_TEXT = {
+  confirmed: 'Accepted',
+  processing: 'Being packed',
+  shipped: 'On the way',
+  delivered: 'Delivered',
+};
 
 /** How often the position is sent while sharing is on. */
 const PUSH_EVERY_MS = 15000;
@@ -46,7 +54,7 @@ export default function RiderPage() {
       setDeliveries(Array.isArray(res.data) ? res.data : []);
       setError('');
     } catch (err) {
-      setError(err.response?.data?.error || 'Could not load your deliveries.');
+      setError(getErrorMessage(err, 'Could not load your deliveries.'));
     } finally {
       setLoading(false);
     }
@@ -99,7 +107,7 @@ export default function RiderPage() {
             lng: pos.coords.longitude,
           });
         } catch (err) {
-          setError(err.response?.data?.error || 'Could not send your position.');
+          setError(getErrorMessage(err, 'Could not send your position.'));
           stopSharing();
         }
       },
@@ -120,10 +128,10 @@ export default function RiderPage() {
       await uploadDeliveryProof(orderId, file, notes[orderId] || '');
       if (sharingId === orderId) stopSharing();
       setNotes((n) => ({ ...n, [orderId]: '' }));
-      setNotice('Delivered. The seller and the buyer can both see the photo.');
+      setNotice('Delivered. The shop and the buyer can both see the photo.');
       await load();
     } catch (err) {
-      setError(err.response?.data?.error || 'Could not upload that photo.');
+      setError(getErrorMessage(err, 'Could not upload that photo.'));
     } finally {
       setBusy('');
     }
@@ -140,148 +148,139 @@ export default function RiderPage() {
     point?.lat != null ? `https://www.google.com/maps?q=${point.lat},${point.lng}` : null;
 
   return (
-    <div className="rp-root">
-      <header className="rp-head">
-        <div className="rp-brand">
-          <Truck size={19} strokeWidth={2.3} />
+    <div className="rider">
+      <header className="rider-head">
+        <div className="rider-brand">
+          <img src={logoImg} alt="" width="28" height="28" />
           <div>
-            <span>AGRIFAIR DELIVERY</span>
             <strong>{user?.name || 'Rider'}</strong>
+            <span>AgriFair delivery</span>
           </div>
         </div>
-        <div className="rp-head-actions">
-          <button type="button" className="rp-icon" onClick={load} title="Refresh">
-            <RefreshCw size={16} strokeWidth={2.3} />
-          </button>
-          <button type="button" className="rp-icon" onClick={signOut} title="Sign out">
-            <LogOut size={16} strokeWidth={2.3} />
-          </button>
-        </div>
+        <button type="button" className="btn btn-ghost btn-icon" onClick={load} aria-label="Refresh deliveries">
+          <RefreshCw size={18} aria-hidden="true" />
+        </button>
+        <button type="button" className="btn btn-ghost btn-icon" onClick={signOut} aria-label="Sign out">
+          <LogOut size={18} aria-hidden="true" />
+        </button>
       </header>
 
-      {error && <p className="rp-error">{error}</p>}
-      {notice && <p className="rp-notice">{notice}</p>}
+      <main className="rider-main">
+        <h1>Your deliveries</h1>
 
-      {loading ? (
-        <div className="rp-skeleton" />
-      ) : deliveries.length === 0 ? (
-        <div className="rp-empty">
-          <Truck size={30} strokeWidth={1.5} />
-          <p>Nothing assigned to you right now. Your seller puts orders here.</p>
+        <div className="live" aria-live="polite">
+          {error && <p className="alert alert-danger">{error}</p>}
+          {notice && <p className="alert alert-success">{notice}</p>}
         </div>
-      ) : (
-        <ul className="rp-list">
-          {deliveries.map((d) => {
+
+        {loading ? (
+          <div className="skeleton" style={{ height: 220 }} />
+        ) : deliveries.length === 0 ? (
+          <section className="panel">
+            <div className="empty">
+              <strong>Nothing assigned to you</strong>
+              <p>When your shop assigns you an order, it appears here.</p>
+            </div>
+          </section>
+        ) : (
+          deliveries.map((d) => {
             const done = Boolean(d.proofOfDelivery);
             const sharing = sharingId === d.orderId;
+            const cash = d.paymentMethod?.toLowerCase().includes('cash');
 
             return (
-              <li className={`rp-card ${done ? 'rp-card--done' : ''}`} key={d.orderId}>
-                <div className="rp-card-head">
+              <section className="panel rider-card" key={d.orderId}>
+                <div className="panel-head">
                   <div>
-                    <strong>{d.orderNumber}</strong>
-                    <span>{d.productName} · {d.quantity}x</span>
+                    <h2>{d.orderNumber}</h2>
+                    <p>{d.productName}, {quantityLabel(d)}</p>
                   </div>
-                  <span className={`rp-chip rp-chip--${done ? 'done' : d.status}`}>
-                    {done ? 'Delivered' : d.status}
+                  <span className={`badge${done ? ' badge-success' : ' badge-info'}`}>
+                    {done ? 'Delivered' : STATUS_TEXT[d.status] || d.status}
                   </span>
                 </div>
 
-                <div className="rp-leg">
-                  <Store size={14} strokeWidth={2.3} />
-                  <div>
-                    <span>Pick up</span>
-                    <p>{d.pickup.address || 'The seller has not written an address'}</p>
+                <div className="panel-body stack">
+                  <div className="rider-leg">
+                    <span className="rider-leg-label">Pick up at {d.shopName || 'the shop'}</span>
+                    <p>{d.pickup.address || 'The shop has not added an address yet.'}</p>
                     {mapLink(d.pickup) && (
-                      <a href={mapLink(d.pickup)} target="_blank" rel="noreferrer">
-                        Open in maps
-                      </a>
+                      <a className="link" href={mapLink(d.pickup)} target="_blank" rel="noreferrer">Open in Maps</a>
                     )}
                   </div>
-                </div>
 
-                <div className="rp-leg">
-                  <MapPin size={14} strokeWidth={2.3} />
-                  <div>
-                    <span>Deliver to {d.customerName}</span>
+                  <div className="rider-leg">
+                    <span className="rider-leg-label">Deliver to {d.customerName}</span>
                     <p>{d.deliveryAddress}</p>
                     {d.dropoff.precision === 'approximate' && (
-                      <em>
-                        The pin is the barangay, not the door — read the address
-                        and the landmark from there.
-                      </em>
+                      <p className="muted">The map pin is the barangay, not the house. Follow the address and landmark.</p>
                     )}
-                    {mapLink(d.dropoff) && (
-                      <a href={mapLink(d.dropoff)} target="_blank" rel="noreferrer">
-                        Open in maps
-                      </a>
-                    )}
-                    {d.customerContact && (
-                      <a className="rp-call" href={`tel:${d.customerContact}`}>
-                        <Phone size={12} strokeWidth={2.4} /> {d.customerContact}
-                      </a>
-                    )}
+                    <div className="rider-links">
+                      {mapLink(d.dropoff) && (
+                        <a className="link" href={mapLink(d.dropoff)} target="_blank" rel="noreferrer">Open in Maps</a>
+                      )}
+                      {d.customerContact && (
+                        <a className="link" href={`tel:${d.customerContact}`}>
+                          <Phone size={14} aria-hidden="true" /> Call {d.customerContact}
+                        </a>
+                      )}
+                    </div>
                   </div>
-                </div>
 
-                {d.notes && <p className="rp-order-note">Note: {d.notes}</p>}
+                  {d.notes && <p className="rider-note">Buyer&rsquo;s note: {d.notes}</p>}
 
-                <p className="rp-pay">
-                  {d.paymentMethod}
-                  {d.paymentStatus === 'paid'
-                    ? ' · already paid'
-                    : d.paymentMethod?.toLowerCase().includes('cash')
-                      ? ` · collect ₱${Number(d.total).toFixed(0)}`
-                      : ' · payment not confirmed yet'}
-                </p>
-
-                {!done && (
-                  <div className="rp-actions">
-                    <button
-                      type="button"
-                      className={sharing ? 'rp-btn rp-btn--live' : 'rp-btn'}
-                      onClick={() => (sharing ? stopSharing() : startSharing(d.orderId))}
-                    >
-                      <Navigation size={15} strokeWidth={2.3} />
-                      {sharing ? 'Sharing — tap to stop' : 'Share my location'}
-                    </button>
-
-                    <label className={`rp-btn rp-btn--primary ${busy === d.orderId ? 'rp-btn--busy' : ''}`}>
-                      <Camera size={15} strokeWidth={2.3} />
-                      {busy === d.orderId ? 'Uploading…' : 'Photo at the door'}
-                      <input
-                        type="file"
-                        accept="image/*"
-                        capture="environment"
-                        hidden
-                        disabled={busy === d.orderId}
-                        onChange={(e) => markDelivered(d.orderId, e.target.files?.[0])}
-                      />
-                    </label>
-
-                    <input
-                      type="text"
-                      className="rp-note"
-                      placeholder="Who received it? (optional)"
-                      value={notes[d.orderId] || ''}
-                      onChange={(e) =>
-                        setNotes((n) => ({ ...n, [d.orderId]: e.target.value }))
-                      }
-                    />
-                  </div>
-                )}
-
-                {done && (
-                  <p className="rp-done">
-                    <CheckCircle2 size={14} strokeWidth={2.4} />
-                    Photo uploaded{d.deliveryNote ? ` — ${d.deliveryNote}` : ''}
+                  <p className={`alert ${d.paymentStatus === 'paid' ? 'alert-success' : cash ? 'alert-warning' : 'alert-info'}`}>
+                    {d.paymentStatus === 'paid'
+                      ? 'Already paid. Collect nothing.'
+                      : cash
+                        ? `Collect ${peso(d.total)} in cash.`
+                        : 'GCash payment not confirmed yet. Collect nothing; the shop will sort it out.'}
                   </p>
-                )}
-              </li>
+
+                  {done ? (
+                    <p className="muted">Photo uploaded{d.deliveryNote ? `. Received by ${d.deliveryNote}` : ''}.</p>
+                  ) : (
+                    <div className="rider-actions">
+                      <button
+                        type="button"
+                        className="btn btn-secondary btn-lg btn-block"
+                        aria-pressed={sharing}
+                        onClick={() => (sharing ? stopSharing() : startSharing(d.orderId))}
+                      >
+                        <Navigation size={18} aria-hidden="true" />
+                        {sharing ? 'Sharing location. Tap to stop' : 'Share my location'}
+                      </button>
+
+                      <label className="field">
+                        <span className="field-label">Who received it? <span className="optional">(optional)</span></span>
+                        <input
+                          className="input"
+                          value={notes[d.orderId] || ''}
+                          autoComplete="off"
+                          onChange={(e) => setNotes((n) => ({ ...n, [d.orderId]: e.target.value }))}
+                        />
+                      </label>
+
+                      <label className={`btn btn-primary btn-lg btn-block${busy === d.orderId ? ' is-disabled' : ''}`}>
+                        <Camera size={18} aria-hidden="true" />
+                        {busy === d.orderId ? 'Uploading…' : 'Take photo at the door'}
+                        <input
+                          type="file"
+                          accept="image/*"
+                          capture="environment"
+                          disabled={busy === d.orderId}
+                          onChange={(e) => markDelivered(d.orderId, e.target.files?.[0])}
+                        />
+                      </label>
+                      <p className="field-hint">The photo marks the order delivered. The shop and the buyer can both see it.</p>
+                    </div>
+                  )}
+                </div>
+              </section>
             );
-          })}
-        </ul>
-      )}
+          })
+        )}
+      </main>
     </div>
   );
 }

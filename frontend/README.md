@@ -1,18 +1,43 @@
-# React + Vite
+# AgriFair web
 
-This template provides a minimal setup to get React working in Vite with HMR and some ESLint rules.
+The landing page, sign-in, the seller portal (`/client`), the Super Admin
+portal (`/superadmin`) and the rider page (`/rider`). Buyers use the Flutter
+app in `../mobile`.
 
-Currently, two official plugins are available:
+```bash
+npm install
+npm run dev     # http://localhost:5173, talks to VITE_API_URL (see .env.example)
+npm run lint
+npm run build
+```
 
-- [@vitejs/plugin-react](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react) uses [Babel](https://babeljs.io/) (or [oxc](https://oxc.rs) when used in [rolldown-vite](https://vite.dev/guide/rolldown)) for Fast Refresh
-- [@vitejs/plugin-react-swc](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react-swc) uses [SWC](https://swc.rs/) for Fast Refresh
+## How the UI is put together
 
-## React Compiler
-
-The React Compiler is enabled on this template. See [this documentation](https://react.dev/learn/react-compiler) for more information.
-
-Note: This will impact Vite dev & build performances.
-
-## Expanding the ESLint configuration
-
-If you are developing a production application, we recommend using TypeScript with type-aware lint rules enabled. Check out the [TS template](https://github.com/vitejs/vite/tree/main/packages/create-vite/template-react-ts) for information on how to integrate TypeScript and [`typescript-eslint`](https://typescript-eslint.io) in your project.
+- `src/index.css` holds the design tokens (colours, radius, shadows) and every
+  shared component: buttons, fields, badges, panels, tables, chips, modal,
+  menu, alerts, empty and loading states. Light theme only.
+- Palette: cream page (`--bg`) and cards (`--surface`), forest greens
+  (`--g950` to `--g300`) for the sidebar, dark banners and text, and gold
+  (`--gold`, `--gold-lt`) for primary buttons and highlights.
+- Shape rule: controls 10px, containers 16px, badges, chips and landing
+  buttons fully rounded.
+- Fonts: Fraunces for headings and big numbers (`--font-display`), DM Sans
+  for everything else, both self-hosted through `@fontsource-variable`.
+- Motion: add `reveal` to an element and call `useReveal()` (in `hooks/`) to
+  fade it in when it scrolls into view; `--i` staggers siblings. The landing
+  hero uses `lp-enter` with `--d`. Hover effects use `translate`, so they never
+  fight a reveal's `transform`. Everything turns off under
+  `prefers-reduced-motion`.
+- Icons: `lucide-react`, at the default stroke.
+- `components/PortalShell` is the frame both portals share (sidebar, drawer on
+  phones, page title). The open section is in the URL (`?tab=orders`).
+- `components/Modal` is built on the native `<dialog>`, which traps focus and
+  closes on Escape. Use `ConfirmDialog` for anything that cannot be undone.
+- `components/account/AccountForms` holds the profile, password, notification
+  and sign-in history forms, used by sellers and Super Admins alike.
+- Tables with the `table-stack` class turn into one card per row below 720px,
+  using each cell's `data-label`.
+- Money, dates and initials go through `utils/format.js` (Intl), so a value
+  reads the same everywhere.
+- Page styles only add what the shared ones do not cover; check
+  `index.css` before writing a new class.

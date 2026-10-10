@@ -1,385 +1,60 @@
-/* Creating a rider's password. Opened on a phone from an email, so it borrows
-   the mobile app's sign-in look (portal_theme.dart) rather than the web portal's. */
-
-@import url('https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&display=swap');
-
 .act {
-  --act-bg: #dfe7db;
-  --act-surface: #f3f7f1;
-  --act-sunken: #d2dccd;
-  --act-primary-dark: #1b3829;
-  --act-primary: #4a7c59;
-  --act-primary-light: #8db89a;
-  --act-gold: #c9a84c;
-  --act-text: #17251d;
-  --act-body: #3d4b42;
-  --act-muted: #7a8880;
-  --act-error: #c0483a;
-
-  position: relative;
-  min-height: 100vh;
   min-height: 100dvh;
-  overflow: hidden;
-  padding-inline: 24px;
-  background: var(--act-bg);
-  color: var(--act-body);
-  font-family: 'Plus Jakarta Sans', 'Segoe UI', system-ui, sans-serif;
-  -webkit-font-smoothing: antialiased;
+  background: var(--surface);
 }
 
-.act *,
-.act *::before,
-.act *::after {
-  box-sizing: border-box;
-}
-
-/* The two soft leaves in the corners of the app's auth screens. */
-.act-leaf {
-  position: absolute;
-  pointer-events: none;
-  border-radius: 0 100% 0 100%;
-}
-
-.act-leaf--right {
-  top: -46px;
-  right: -40px;
-  width: 150px;
-  height: 150px;
-  background: rgba(141, 184, 154, 0.2);
-  transform: rotate(8deg);
-}
-
-.act-leaf--left {
-  top: 20px;
-  left: -48px;
-  width: 104px;
-  height: 104px;
-  background: rgba(74, 124, 89, 0.1);
-  transform: rotate(-28deg);
-}
-
-.act-shell {
-  position: relative;
-  width: 100%;
+.act-body {
+  display: grid;
+  gap: 24px;
   max-width: 420px;
   margin: 0 auto;
-  padding-block: 24px 40px;
+  padding: 32px 20px max(32px, env(safe-area-inset-bottom));
 }
 
 .act-brand {
   display: flex;
-  flex-direction: column;
-  align-items: center;
-  gap: 14px;
-  margin-bottom: clamp(36px, 9vh, 72px);
-}
-
-.act-wordmark {
-  font-size: 12px;
-  font-weight: 800;
-  letter-spacing: 0.2em;
-  color: var(--act-primary-dark);
-}
-
-.act-logo {
-  width: 84px;
-  height: 84px;
-  padding: 10px;
-  border-radius: 22px;
-  background: var(--act-surface);
-  box-shadow: 7px 7px 16px rgba(90, 112, 94, 0.35), -6px -6px 14px #fff;
-}
-
-.act-logo img {
-  display: block;
-  width: 100%;
-  height: 100%;
-  object-fit: contain;
-}
-
-.act-body {
-  display: flex;
-  flex-direction: column;
-  animation: act-in 0.35s ease both;
-}
-
-.act-title {
-  margin: 0;
-  font-size: 24px;
-  font-weight: 800;
-  line-height: 1.1;
-  letter-spacing: -0.04em;
-  color: var(--act-text);
-}
-
-.act-subtitle {
-  margin: 6px 0 20px;
-  font-size: 13.5px;
-  line-height: 1.45;
-  color: var(--act-muted);
-  overflow-wrap: anywhere;
-}
-
-.act-subtitle strong {
-  font-weight: 700;
-  color: var(--act-body);
-}
-
-.act-label {
-  margin: 0 0 6px;
-  font-size: 12.5px;
-  font-weight: 700;
-  color: var(--act-text);
-}
-
-.act-field + .act-label {
-  margin-top: 14px;
-}
-
-.act-field {
-  display: flex;
   align-items: center;
   gap: 10px;
-  min-height: 50px;
-  padding: 0 6px 0 14px;
-  border: 1.2px solid rgba(255, 255, 255, 0.4);
-  border-radius: 18px;
-  background: var(--act-sunken);
-  transition: border-color 0.15s ease, box-shadow 0.15s ease;
+  font-size: 17px;
+  font-weight: 650;
 }
 
-.act-field:focus-within {
-  border-color: var(--act-primary);
-  box-shadow: 0 0 0 1px var(--act-primary);
+.act-brand img {
+  border-radius: 8px;
 }
 
-.act-field-icon {
-  flex-shrink: 0;
-  color: var(--act-muted);
+.act h1 {
+  font-size: 24px;
 }
 
-.act-field input {
-  flex: 1;
-  min-width: 0;
-  height: 48px;
-  padding: 0;
-  border: 0;
-  outline: 0;
-  background: transparent;
-  color: var(--act-text);
-  font: inherit;
+.act-text {
+  margin-top: 6px;
+  color: var(--text-2);
   font-size: 15px;
+  line-height: 1.55;
 }
 
-.act-field input::placeholder {
-  color: var(--act-muted);
-}
-
-.act-eye {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  flex-shrink: 0;
-  width: 40px;
-  height: 40px;
-  padding: 0;
-  border: 0;
-  border-radius: 12px;
-  background: transparent;
-  color: var(--act-muted);
-  cursor: pointer;
-}
-
-.act-eye:focus-visible {
-  outline: 2px solid var(--act-primary);
-}
-
-/* Ticks turn green as the password qualifies, so the rules are met before
-   the button is pressed rather than explained after. */
 .act-checks {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 6px 16px;
-  margin: 12px 0 0;
-  padding: 0;
+  display: grid;
+  gap: 6px;
   list-style: none;
+  color: var(--text-3);
+  font-size: 13.5px;
 }
 
 .act-checks li {
-  display: inline-flex;
+  display: flex;
   align-items: center;
-  gap: 6px;
-  font-size: 12px;
-  font-weight: 600;
-  color: var(--act-muted);
-  transition: color 0.15s ease;
-}
-
-.act-checks li svg {
-  padding: 2px;
-  border-radius: 99px;
-  background: rgba(122, 136, 128, 0.18);
-  color: transparent;
-  transition: background 0.15s ease, color 0.15s ease;
+  gap: 8px;
 }
 
 .act-checks li.is-ok {
-  color: var(--act-primary);
-}
-
-.act-checks li.is-ok svg {
-  background: var(--act-primary);
-  color: #fff;
-}
-
-.act-error {
-  margin: 14px 0 0;
-  padding: 10px 12px;
-  border-radius: 12px;
-  background: rgba(192, 72, 58, 0.1);
-  color: var(--act-error);
-  font-size: 13px;
-  font-weight: 600;
-  line-height: 1.4;
-}
-
-.act-button {
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  gap: 8px;
-  width: 100%;
-  min-height: 52px;
-  margin-top: 22px;
-  padding: 0 22px;
-  border: 0;
-  border-radius: 18px;
-  background: var(--act-primary-dark);
-  box-shadow: 0 10px 20px rgba(74, 124, 89, 0.25), 0 -2px 6px rgba(255, 255, 255, 0.4);
-  color: #fff;
-  font: inherit;
-  font-size: 15px;
-  font-weight: 700;
-  text-decoration: none;
-  cursor: pointer;
-  transition: transform 0.11s ease, opacity 0.15s ease, box-shadow 0.11s ease;
-}
-
-.act-button:active:not(:disabled) {
-  transform: scale(0.97);
-  box-shadow: none;
-}
-
-.act-button:disabled {
-  opacity: 0.55;
-  cursor: default;
-}
-
-.act-button:focus-visible {
-  outline: 3px solid var(--act-primary-light);
-  outline-offset: 2px;
-}
-
-.act-spinner {
-  width: 18px;
-  height: 18px;
-  border: 2.2px solid rgba(255, 255, 255, 0.35);
-  border-top-color: #fff;
-  border-radius: 50%;
-  animation: act-spin 0.7s linear infinite;
-}
-
-.act-note {
-  margin: 14px 0 0;
-  text-align: center;
-  font-size: 12.5px;
-  color: var(--act-muted);
-}
-
-.act-link {
-  font-weight: 700;
-  color: var(--act-primary);
-  text-decoration: none;
-}
-
-.act-state .act-button {
-  align-self: stretch;
-}
-
-.act-spinner--dark {
-  border-color: rgba(27, 56, 41, 0.18);
-  border-top-color: var(--act-primary-dark);
+  color: var(--success-fg);
 }
 
 .act-opening {
-  display: inline-flex;
+  display: flex;
   align-items: center;
   gap: 10px;
-  margin-top: 26px;
-  font-size: 14px;
-  font-weight: 700;
-  color: var(--act-primary-dark);
-}
-
-/* Everything that is not the form: one icon, one sentence, maybe one action. */
-.act-state {
-  align-items: center;
-  text-align: center;
-}
-
-.act-state .act-subtitle {
-  margin-bottom: 0;
-}
-
-.act-state .act-error {
-  align-self: stretch;
-}
-
-.act-state-icon {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  width: 60px;
-  height: 60px;
-  margin-bottom: 16px;
-  border-radius: 20px;
-  background: var(--act-surface);
-  box-shadow: 4px 4px 10px rgba(90, 112, 94, 0.23), -3px -3px 8px rgba(255, 255, 255, 0.96);
-}
-
-.act-state-icon--ok { color: var(--act-primary); }
-.act-state-icon--wait { color: #9a7424; }
-.act-state-icon--off { color: var(--act-error); }
-
-.act-skeleton {
-  border-radius: 14px;
-  background: linear-gradient(90deg, rgba(0, 0, 0, 0.05), rgba(0, 0, 0, 0.09), rgba(0, 0, 0, 0.05));
-  background-size: 200% 100%;
-  animation: act-shimmer 1.2s linear infinite;
-}
-
-.act-skeleton--title { width: 70%; height: 26px; }
-.act-skeleton--line { width: 90%; height: 14px; margin: 10px 0 24px; }
-.act-skeleton--field { height: 50px; margin-top: 12px; border-radius: 18px; }
-.act-skeleton--button { height: 52px; margin-top: 26px; border-radius: 18px; }
-
-@keyframes act-in {
-  from { opacity: 0; transform: translateY(8px); }
-  to { opacity: 1; transform: translateY(0); }
-}
-
-@keyframes act-spin {
-  to { transform: rotate(360deg); }
-}
-
-@keyframes act-shimmer {
-  to { background-position: -200% 0; }
-}
-
-@media (prefers-reduced-motion: reduce) {
-  .act-body,
-  .act-skeleton,
-  .act-spinner {
-    animation: none;
-  }
+  color: var(--text-2);
 }

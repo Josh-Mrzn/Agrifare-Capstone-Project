@@ -5,9 +5,9 @@ function toProfileFormData(data) {
   // pickupLat/pickupLng are the point a rider navigates to; pickupAddress is
   // the words a person reads. Both travel on the same form.
   [
-    'name', 'email', 'contact', 'bio',
+    'name', 'contact', 'bio',
     'pickupAddress', 'pickupLat', 'pickupLng',
-    'deliveryOrigin', 'theme',
+    'deliveryOrigin', 'deliveryFee',
   ].forEach((key) => {
     if (data[key] !== undefined) fd.append(key, data[key]);
   });

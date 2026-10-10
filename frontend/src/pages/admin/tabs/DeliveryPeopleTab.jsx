@@ -1,68 +1,60 @@
 import React, { useCallback, useEffect, useState } from 'react';
-import { UserPlus, Mail, CheckCircle2, Clock, Ban, RotateCcw, RefreshCw } from 'lucide-react';
+import { useSearchParams } from 'react-router-dom';
+import { ChevronRight } from 'lucide-react';
 import {
   fetchRiders,
   addRider,
   resendRiderLink,
   toggleRiderSuspension,
 } from '../../../services/riderApi';
-import './DeliveryPeopleTab.css';
+import { fetchMyOrders } from '../../../services/clientApi';
+import { getErrorMessage } from '../../../services/authApi';
+import { ConfirmDialog } from '../../../components/Modal';
+import ActionsMenu from '../../../components/ActionsMenu';
+import { STATUS_LABEL, statusBadge } from '../orderStatus';
+
+const ON_THE_ROAD = ['confirmed', 'processing', 'shipped'];
+
+function carrierOf(order) {
+  const d = order.delivery || {};
+  if (d.riderUserId != null) return d.courierName || 'Your rider';
+  if (d.courierName) return `${d.courierName}${d.courierReference ? `, ${d.courierReference}` : ''}`;
+  return '';
+}
 
 /**
- * The people who carry the rice.
+ * Who delivers, and what they are carrying right now.
  *
  * A delivery person does not sign themselves up. Their name and email is the
- * whole form — the account is created with a random password nobody is told,
- * not even you, so a seller cannot sign in as their own staff. The rider gets
- * an activation link by email, chooses their own password on the page it
- * opens, then signs in on the app.
+ * whole form: the account is created with a random password nobody is told,
+ * not even the seller, and the rider sets their own from the emailed link.
  */
 export default function DeliveryPeopleTab() {
-  const [riders, setRiders] = useState([]);
-  const [loading, setLoading] = useState(true);
+  const [, setParams] = useSearchParams();
+  const [riders, setRiders] = useState(null);
+  const [orders, setOrders] = useState([]);
   const [error, setError] = useState('');
   const [notice, setNotice] = useState('');
   const [busy, setBusy] = useState('');
   const [form, setForm] = useState({ name: '', email: '', contact: '' });
+  const [suspending, setSuspending] = useState(null);
 
   const load = useCallback(async () => {
-    setLoading(true);
     try {
-      const res = await fetchRiders();
-      setRiders(Array.isArray(res.data) ? res.data : []);
+      const [r, o] = await Promise.all([fetchRiders(), fetchMyOrders().catch(() => ({ data: [] }))]);
+      setRiders(Array.isArray(r.data) ? r.data : []);
+      const list = o.data?.orders || o.data || [];
+      setOrders(Array.isArray(list) ? list : []);
       setError('');
     } catch (err) {
-      setError(err.response?.data?.error || 'Could not load your delivery people.');
-    } finally {
-      setLoading(false);
+      setError(getErrorMessage(err, 'Could not load your delivery people.'));
+      setRiders([]);
     }
   }, []);
 
   useEffect(() => {
     load();
   }, [load]);
-
-  async function submit(e) {
-    e.preventDefault();
-    setBusy('add');
-    setError('');
-    setNotice('');
-
-    try {
-      const res = await addRider(form);
-      setForm({ name: '', email: '', contact: '' });
-      setNotice(
-        res.data?.linkSent
-          ? `Activation link sent to ${res.data.email}. They choose their own password from it.`
-          : `${res.data?.name} was added, but the link could not be emailed. Use "Resend link".`,
-      );
-      await load();
-    } catch (err) {
-      setError(err.response?.data?.error || 'Could not add that person.');
-    } finally {
-      setBusy('');
-    }
-  }
 
   async function act(key, fn, done) {
     setBusy(key);
@@ -73,163 +65,186 @@ export default function DeliveryPeopleTab() {
       setNotice(done);
       await load();
     } catch (err) {
-      setError(err.response?.data?.error || 'That did not work.');
+      setError(getErrorMessage(err, 'That did not work. Please try again.'));
     } finally {
       setBusy('');
     }
   }
 
+  async function submit(e) {
+    e.preventDefault();
+    setBusy('add');
+    setError('');
+    setNotice('');
+    try {
+      const res = await addRider(form);
+      setForm({ name: '', email: '', contact: '' });
+      setNotice(res.data?.linkSent
+        ? `Added. ${res.data.email} gets an email to set their password.`
+        : `${res.data?.name} was added, but the email did not go out. Use "Send the link again".`);
+      await load();
+    } catch (err) {
+      setError(getErrorMessage(err, 'Could not add that person.'));
+    } finally {
+      setBusy('');
+    }
+  }
+
+  const road = orders.filter((o) => o.source === 'storefront' && ON_THE_ROAD.includes(o.status));
+  const set = (key) => (e) => setForm((f) => ({ ...f, [key]: e.target.value }));
+
   return (
-    <div className="ap-tab-content">
-      <div className="dp-grid">
-        <section className="ap-panel dp-form-panel">
-          <div className="ap-panel-head">
-            <h2>Add a delivery person</h2>
-          </div>
+    <>
+      <div className="live" aria-live="polite">
+        {error && <p className="alert alert-danger">{error}</p>}
+        {notice && <p className="alert alert-success">{notice}</p>}
+      </div>
 
-          <p className="dp-lede">
-            Name and email is all you need. They get an activation link by email
-            and choose their own password — you never see it, and cannot sign in
-            as them.
-          </p>
-
-          <form onSubmit={submit} className="dp-form">
-            <label>
-              <span>Full name</span>
-              <input
-                type="text"
-                required
-                value={form.name}
-                placeholder="Juan Dela Cruz"
-                onChange={(e) => setForm((f) => ({ ...f, name: e.target.value }))}
-              />
-            </label>
-            <label>
-              <span>Email</span>
-              <input
-                type="email"
-                required
-                value={form.email}
-                placeholder="juan@example.com"
-                onChange={(e) => setForm((f) => ({ ...f, email: e.target.value }))}
-              />
-            </label>
-            <label>
-              <span>Contact number <em>optional</em></span>
-              <input
-                type="tel"
-                value={form.contact}
-                placeholder="09XX XXX XXXX"
-                onChange={(e) => setForm((f) => ({ ...f, contact: e.target.value }))}
-              />
-            </label>
-
-            <button className="ap-btn-primary" type="submit" disabled={busy === 'add'}>
-              <UserPlus size={15} strokeWidth={2.3} />
-              {busy === 'add' ? 'Adding…' : 'Add and send the link'}
-            </button>
-          </form>
-
-          {error && <p className="ap-form-error">{error}</p>}
-          {notice && <p className="dp-notice">{notice}</p>}
-        </section>
-
-        <section className="ap-panel">
-          <div className="ap-panel-head">
-            <h2>Your delivery people</h2>
-            <button className="dp-refresh" type="button" onClick={load}>
-              <RefreshCw size={14} strokeWidth={2.3} /> Refresh
-            </button>
-          </div>
-
-          {loading ? (
-            <div className="dp-skeleton" />
-          ) : riders.length === 0 ? (
-            <p className="ap-empty-state">
-              Nobody yet. Add somebody and they will appear in the assign list on
-              each order.
-            </p>
-          ) : (
-            <ul className="dp-list">
-              {riders.map((rider) => (
-                <li className="dp-row" key={rider.userId}>
-                  <div className="dp-who">
-                    <strong>{rider.name}</strong>
-                    <span>
-                      {rider.email}
-                      {rider.contact ? ` · ${rider.contact}` : ''} · ID {rider.userId}
-                    </span>
-                  </div>
-
-                  <div className="dp-state">
-                    {rider.status === 'suspended' ? (
-                      <span className="dp-chip dp-chip--off">
-                        <Ban size={12} strokeWidth={2.4} /> Suspended
-                      </span>
-                    ) : rider.activated ? (
-                      <span className="dp-chip dp-chip--on">
-                        <CheckCircle2 size={12} strokeWidth={2.4} /> Active
-                      </span>
-                    ) : (
-                      <span className="dp-chip dp-chip--wait">
-                        <Clock size={12} strokeWidth={2.4} /> Has not signed in yet
-                      </span>
-                    )}
-                  </div>
-
-                  <div className="dp-actions">
-                    {!rider.activated && rider.status !== 'suspended' && (
+      <div className="split-grid">
+        <div className="stack">
+          <section className="panel">
+            <div className="panel-head">
+              <div>
+                <h2>On the road</h2>
+                <p>Accepted orders and who is carrying each one.</p>
+              </div>
+            </div>
+            {road.length === 0 ? (
+              <div className="empty"><p>No orders are waiting to be delivered.</p></div>
+            ) : (
+              <ul className="list">
+                {road.map((o) => {
+                  const carrier = carrierOf(o);
+                  return (
+                    <li key={o._id}>
                       <button
                         type="button"
-                        className="ap-btn-ghost ap-btn-sm"
-                        disabled={busy === `link-${rider.userId}`}
-                        onClick={() =>
-                          act(
-                            `link-${rider.userId}`,
-                            () => resendRiderLink(rider.userId),
-                            `New activation link sent to ${rider.email}. Older links stop working.`,
-                          )
-                        }
+                        className="list-row"
+                        onClick={() => setParams({ tab: 'orders', order: o._id })}
                       >
-                        <Mail size={13} strokeWidth={2.3} /> Resend link
+                        <span className="list-row-main">
+                          <strong>{o.orderNumber}, {o.customerName}</strong>
+                          <span>{carrier || 'Nobody assigned yet'}</span>
+                        </span>
+                        <span className="list-row-side">
+                          {!carrier && <span className="badge badge-warning">Needs a carrier</span>}
+                          <span className={statusBadge(o.status)}>{STATUS_LABEL[o.status]}</span>
+                          <ChevronRight size={16} className="muted" aria-hidden="true" />
+                        </span>
                       </button>
-                    )}
-                    <button
-                      type="button"
-                      className="ap-btn-ghost ap-btn-sm"
-                      disabled={busy === `susp-${rider.userId}`}
-                      onClick={() =>
-                        act(
-                          `susp-${rider.userId}`,
-                          () => toggleRiderSuspension(rider.userId),
-                          rider.status === 'suspended'
-                            ? `${rider.name} can take deliveries again.`
-                            : `${rider.name} is suspended.`,
-                        )
-                      }
-                    >
-                      {rider.status === 'suspended' ? (
-                        <>
-                          <RotateCcw size={13} strokeWidth={2.3} /> Reinstate
-                        </>
-                      ) : (
-                        <>
-                          <Ban size={13} strokeWidth={2.3} /> Suspend
-                        </>
-                      )}
-                    </button>
-                  </div>
-                </li>
-              ))}
-            </ul>
-          )}
+                    </li>
+                  );
+                })}
+              </ul>
+            )}
+          </section>
 
-          <p className="dp-foot">
-            Suspending never deletes. Their name is on the orders they already
-            delivered, and those would otherwise lose track of who carried them.
-          </p>
+          <section className="panel">
+            <div className="panel-head"><h2>Your delivery people</h2></div>
+            {riders === null ? (
+              <div className="skeleton-rows"><div className="skeleton" /><div className="skeleton" /></div>
+            ) : riders.length === 0 ? (
+              <div className="empty">
+                <strong>Nobody yet</strong>
+                <p>Add the people who deliver for you. You can then assign them to orders.</p>
+              </div>
+            ) : (
+              <ul className="list">
+                {riders.map((rider) => {
+                  const suspended = rider.status === 'suspended';
+                  return (
+                    <li key={rider.userId} className="list-row">
+                      <span className="list-row-main">
+                        <strong>{rider.name}</strong>
+                        <span>{rider.email}{rider.contact ? `, ${rider.contact}` : ''}</span>
+                      </span>
+                      <span className="list-row-side">
+                        {suspended
+                          ? <span className="badge badge-danger">Suspended</span>
+                          : rider.activated
+                            ? <span className="badge badge-success">Active</span>
+                            : <span className="badge badge-warning">Not set up yet</span>}
+                        <ActionsMenu
+                          label={`Actions for ${rider.name}`}
+                          items={[
+                            {
+                              label: 'Send the link again',
+                              hidden: rider.activated || suspended,
+                              onClick: () => act(
+                                `link-${rider.userId}`,
+                                () => resendRiderLink(rider.userId),
+                                `A new link went to ${rider.email}. Older links stop working.`,
+                              ),
+                            },
+                            suspended
+                              ? {
+                                label: 'Reinstate',
+                                onClick: () => act(
+                                  `susp-${rider.userId}`,
+                                  () => toggleRiderSuspension(rider.userId),
+                                  `${rider.name} can take deliveries again.`,
+                                ),
+                              }
+                              : { label: 'Suspend', danger: true, onClick: () => setSuspending(rider) },
+                          ]}
+                        />
+                      </span>
+                    </li>
+                  );
+                })}
+              </ul>
+            )}
+          </section>
+        </div>
+
+        <section className="panel">
+          <div className="panel-head">
+            <div>
+              <h2>Add a delivery person</h2>
+              <p>They get an email to set their own password. You never see it.</p>
+            </div>
+          </div>
+          <form className="panel-body form-grid" onSubmit={submit}>
+            <label className="field">
+              <span className="field-label">Full name</span>
+              <input className="input" required value={form.name} onChange={set('name')} autoComplete="off" />
+            </label>
+            <label className="field">
+              <span className="field-label">Email</span>
+              <input className="input" type="email" required spellCheck={false} value={form.email} onChange={set('email')} autoComplete="off" />
+            </label>
+            <label className="field">
+              <span className="field-label">Mobile number <span className="optional">(optional)</span></span>
+              <input className="input" type="tel" inputMode="tel" value={form.contact} onChange={set('contact')} placeholder="0917 123 4567" autoComplete="off" />
+            </label>
+            <div>
+              <button className="btn btn-primary" type="submit" disabled={busy === 'add'}>
+                {busy === 'add' ? 'Adding…' : 'Add and send the email'}
+              </button>
+            </div>
+          </form>
         </section>
       </div>
-    </div>
+
+      {suspending && (
+        <ConfirmDialog
+          title={`Suspend ${suspending.name}?`}
+          confirmLabel="Suspend"
+          danger
+          busy={busy === `susp-${suspending.userId}`}
+          onClose={() => setSuspending(null)}
+          onConfirm={async () => {
+            await act(
+              `susp-${suspending.userId}`,
+              () => toggleRiderSuspension(suspending.userId),
+              `${suspending.name} is suspended and can no longer sign in.`,
+            );
+            setSuspending(null);
+          }}
+        >
+          <p>They are signed out and cannot take deliveries. Orders they already delivered keep their name. You can reinstate them later.</p>
+        </ConfirmDialog>
+      )}
+    </>
   );
 }

@@ -1,17 +1,6 @@
 import React, { useEffect, useRef, useState } from 'react';
 import { useSearchParams } from 'react-router-dom';
-import {
-  Lock,
-  Eye,
-  EyeOff,
-  Check,
-  Mail,
-  Clock,
-  CheckCircle2,
-  Ban,
-  Link2Off,
-  Smartphone,
-} from 'lucide-react';
+import { Eye, EyeOff, Check, Mail, Smartphone } from 'lucide-react';
 import {
   fetchActivationStatus,
   activateAccount,
@@ -26,7 +15,7 @@ import './ActivatePage.css';
  * emailed link.
  *
  * A delivery person's account is made by their seller with a random password
- * nobody is told — not even the seller, who should not be able to sign in as
+ * nobody is told, not even the seller, who should not be able to sign in as
  * their own staff. The link proves the address is theirs, so the only thing
  * left to ask is the password.
  *
@@ -187,214 +176,138 @@ export default function ActivatePage() {
     }
   }
 
+  const field = (key, label, autoFocus) => (
+    <div className="field">
+      <label className="field-label" htmlFor={`act-${key}`}>{label}</label>
+      <span className="input-group">
+        <input
+          id={`act-${key}`}
+          className="input"
+          type={show[key] ? 'text' : 'password'}
+          autoComplete="new-password"
+          // The one field on a page opened to do exactly this.
+          autoFocus={autoFocus}
+          value={form[key]}
+          onChange={set(key)}
+          disabled={busy}
+        />
+        <button
+          type="button"
+          className="input-group-btn"
+          onClick={() => toggle(key)}
+          aria-label={show[key] ? 'Hide password' : 'Show password'}
+        >
+          {show[key] ? <EyeOff size={16} aria-hidden="true" /> : <Eye size={16} aria-hidden="true" />}
+        </button>
+      </span>
+    </div>
+  );
+
   return (
     <div className="act">
-      <div className="act-leaf act-leaf--right" aria-hidden="true" />
-      <div className="act-leaf act-leaf--left" aria-hidden="true" />
-
-      <main className="act-shell">
-        <header className="act-brand">
-          <span className="act-wordmark">AGRIFAIR</span>
-          <div className="act-logo">
-            <img src={logoImg} alt="AgriFair" />
-          </div>
-        </header>
+      <main className="act-body">
+        <div className="act-brand">
+          <img src={logoImg} alt="" width="36" height="36" />
+          <span translate="no">AgriFair</span>
+        </div>
 
         {state === 'loading' && (
-          <div className="act-body" aria-busy="true" aria-label="Checking your link">
-            <div className="act-skeleton act-skeleton--title" />
-            <div className="act-skeleton act-skeleton--line" />
-            <div className="act-skeleton act-skeleton--field" />
-            <div className="act-skeleton act-skeleton--field" />
-            <div className="act-skeleton act-skeleton--button" />
+          <div className="stack" aria-busy="true" aria-label="Checking your link">
+            <div className="skeleton" style={{ height: 28, width: '70%' }} />
+            <div className="skeleton" style={{ height: 40 }} />
+            <div className="skeleton" style={{ height: 40 }} />
           </div>
         )}
 
         {state === 'valid' && (
-          <form className="act-body" onSubmit={submit} noValidate>
-            <h1 className="act-title">Create your password</h1>
-            <p className="act-subtitle">
-              {who.name ? `Hi ${who.name.split(' ')[0]}, ` : ''}
-              set a password for <strong>{who.email}</strong>. You will use it to
-              sign in on the AgriFair app.
-            </p>
-
-            <label className="act-label" htmlFor="act-password">New password</label>
-            <div className="act-field">
-              <Lock size={18} strokeWidth={2} className="act-field-icon" />
-              <input
-                id="act-password"
-                type={show.password ? 'text' : 'password'}
-                autoComplete="new-password"
-                autoFocus
-                value={form.password}
-                onChange={set('password')}
-                placeholder="Enter a new password"
-                disabled={busy}
-              />
-              <button
-                type="button"
-                className="act-eye"
-                onClick={() => toggle('password')}
-                aria-label={show.password ? 'Hide password' : 'Show password'}
-              >
-                {show.password ? <Eye size={18} /> : <EyeOff size={18} />}
-              </button>
+          <form className="stack" onSubmit={submit} noValidate>
+            <div>
+              <h1>Set your password</h1>
+              <p className="act-text">
+                {who.name ? `Hi ${who.name.split(' ')[0]}. ` : ''}
+                Choose a password for <strong>{who.email}</strong>. You will use it to sign in on the AgriFair app.
+              </p>
             </div>
 
-            <label className="act-label" htmlFor="act-confirm">Confirm password</label>
-            <div className="act-field">
-              <Lock size={18} strokeWidth={2} className="act-field-icon" />
-              <input
-                id="act-confirm"
-                type={show.confirm ? 'text' : 'password'}
-                autoComplete="new-password"
-                value={form.confirm}
-                onChange={set('confirm')}
-                placeholder="Type it again"
-                disabled={busy}
-              />
-              <button
-                type="button"
-                className="act-eye"
-                onClick={() => toggle('confirm')}
-                aria-label={show.confirm ? 'Hide password' : 'Show password'}
-              >
-                {show.confirm ? <Eye size={18} /> : <EyeOff size={18} />}
-              </button>
-            </div>
+            {field('password', 'New password', true)}
+            {field('confirm', 'Type it again', false)}
 
             <ul className="act-checks">
               <li className={longEnough ? 'is-ok' : ''}>
-                <Check size={14} strokeWidth={3} /> At least {MIN_LENGTH} characters
+                <Check size={14} aria-hidden="true" /> At least {MIN_LENGTH} characters
               </li>
               <li className={matches ? 'is-ok' : ''}>
-                <Check size={14} strokeWidth={3} /> Both passwords match
+                <Check size={14} aria-hidden="true" /> Both passwords match
               </li>
             </ul>
 
-            {error && <p className="act-error" role="alert">{error}</p>}
+            {error && <p className="alert alert-danger" role="alert">{error}</p>}
 
-            <button type="submit" className="act-button" disabled={busy}>
-              {busy ? <span className="act-spinner" aria-label="Saving" /> : 'Create Password'}
+            <button type="submit" className="btn btn-primary btn-lg btn-block" disabled={busy}>
+              {busy ? <><span className="spinner" aria-hidden="true" /> Saving…</> : 'Set password'}
             </button>
-
-            <p className="act-note">
-              Only you will know this password — not even your shop.
-            </p>
+            <p className="field-hint">Only you will know this password. Your shop cannot see it.</p>
           </form>
         )}
 
         {state === 'expired' && (
-          <section className="act-body act-state">
-            <span className="act-state-icon act-state-icon--wait">
-              <Clock size={26} strokeWidth={2.2} />
-            </span>
+          <div className="stack">
             {sentTo ? (
               <>
-                <h1 className="act-title">Check your inbox</h1>
-                <p className="act-subtitle">
-                  We sent a new link to <strong>{sentTo}</strong>. Open the newest
-                  email — this link no longer works.
-                </p>
+                <h1>Check your email</h1>
+                <p className="act-text">We sent a new link to <strong>{sentTo}</strong>. Open the newest email; this link no longer works.</p>
               </>
             ) : (
               <>
-                <h1 className="act-title">This link has expired</h1>
-                <p className="act-subtitle">
-                  Links work for 48 hours. We can send a new one to{' '}
-                  <strong>{who.email}</strong>.
-                </p>
-
-                {error && <p className="act-error" role="alert">{error}</p>}
-
-                <button
-                  type="button"
-                  className="act-button"
-                  onClick={resend}
-                  disabled={busy || cooldown > 0}
-                >
-                  {busy ? (
-                    <span className="act-spinner" aria-label="Sending" />
-                  ) : (
-                    <>
-                      <Mail size={17} strokeWidth={2.2} />
-                      {cooldown > 0 ? `Resend in ${cooldown}s` : 'Resend Activation Email'}
-                    </>
-                  )}
+                <h1>This link has expired</h1>
+                <p className="act-text">Links work for 48 hours. We can send a new one to <strong>{who.email}</strong>.</p>
+                {error && <p className="alert alert-danger" role="alert">{error}</p>}
+                <button type="button" className="btn btn-primary btn-lg btn-block" onClick={resend} disabled={busy || cooldown > 0}>
+                  <Mail size={18} aria-hidden="true" />
+                  {busy ? 'Sending…' : cooldown > 0 ? `Send again in ${cooldown}s` : 'Send a new link'}
                 </button>
               </>
             )}
-          </section>
+          </div>
         )}
 
         {(state === 'active' || state === 'done') && (
-          <section className="act-body act-state">
-            <span className="act-state-icon act-state-icon--ok">
-              <CheckCircle2 size={26} strokeWidth={2.2} />
-            </span>
-            <h1 className="act-title">
-              {state === 'done' ? 'Password created' : 'Already set up'}
-            </h1>
-            <p className="act-subtitle">
-              Your delivery account is ready. Sign in with{' '}
-              {who.email ? <strong>{who.email}</strong> : 'your email'} and your
-              new password.
+          <div className="stack">
+            <h1>{state === 'done' ? 'You are all set' : 'Already set up'}</h1>
+            <p className="act-text">
+              Your delivery account is ready. Sign in on the AgriFair app with{' '}
+              {who.email ? <strong>{who.email}</strong> : 'your email'} and your password.
             </p>
-
-            {launch === 'opening' && (
-              <div className="act-opening" role="status">
-                <span className="act-spinner act-spinner--dark" />
-                Opening the AgriFair app…
-              </div>
-            )}
-
-            {launch === 'idle' && (
+            {launch === 'opening' ? (
+              <p className="act-opening" role="status"><span className="spinner" aria-hidden="true" /> Opening the AgriFair app…</p>
+            ) : (
               <>
-                <a className="act-button" href={openAppHref()}>
-                  <Smartphone size={18} strokeWidth={2.2} />
-                  Open AgriFair App
+                <a className="btn btn-primary btn-lg btn-block" href={openAppHref()}>
+                  <Smartphone size={18} aria-hidden="true" /> Open the AgriFair app
                 </a>
-                <p className="act-note">
-                  No app yet?{' '}
-                  <a className="act-link" href={APP_DOWNLOAD_URL}>
-                    Download AgriFair
-                  </a>
+                <p className="field-hint">
+                  No app yet? <a className="link" href={APP_DOWNLOAD_URL}>Download AgriFair</a>
                 </p>
               </>
             )}
-
-          </section>
+          </div>
         )}
 
         {state === 'suspended' && (
-          <section className="act-body act-state">
-            <span className="act-state-icon act-state-icon--off">
-              <Ban size={26} strokeWidth={2.2} />
-            </span>
-            <h1 className="act-title">Account suspended</h1>
-            <p className="act-subtitle">Ask the shop you deliver for about it.</p>
-          </section>
+          <div className="stack">
+            <h1>Account suspended</h1>
+            <p className="act-text">Ask the shop you deliver for about it.</p>
+          </div>
         )}
 
         {state === 'invalid' && (
-          <section className="act-body act-state">
-            <span className="act-state-icon act-state-icon--off">
-              <Link2Off size={26} strokeWidth={2.2} />
-            </span>
-            <h1 className="act-title">Link no longer valid</h1>
-            <p className="act-subtitle">
-              A newer link may have been sent. Open the newest AgriFair email, or
-              ask your shop to send you a new one.
-            </p>
-          </section>
+          <div className="stack">
+            <h1>This link no longer works</h1>
+            <p className="act-text">A newer link may have been sent. Open the newest AgriFair email, or ask your shop to send a new one.</p>
+          </div>
         )}
 
-        {state === 'error' && (
-          <section className="act-body act-state">
-            <p className="act-error" role="alert">{error}</p>
-          </section>
-        )}
+        {state === 'error' && <p className="alert alert-danger" role="alert">{error}</p>}
       </main>
     </div>
   );

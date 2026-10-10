@@ -107,25 +107,20 @@ export default function HighlightsSection() {
   const showOverlay = !started || ended;
 
   return (
-    <section className="lp-hl" id="video" aria-labelledby="lp-hl-title">
-      <div className="lp-hl-inner animate-on-scroll">
-        <header className="lp-hl-head">
-          <div>
-            <p className="lp-hl-eyebrow">
-              <span className="lp-hl-eyebrow-dot" aria-hidden="true" />
-              Highlights · {formatTime(duration)} animated short
-            </p>
-            <h2 className="lp-hl-title" id="lp-hl-title">
-              A <em>fairer</em> way to sell the harvest
-            </h2>
-          </div>
-          <p className="lp-hl-lede">
-            Two rice farmers, a middleman&apos;s truck, and the app that let them
-            sell on their own terms — the whole idea behind AgriFair in one minute.
+    <section className="lp-section lp-hl" id="story" aria-labelledby="lp-hl-title">
+      <div className="lp-wrap">
+        <header className="lp-hl-head reveal">
+          <span className="lp-section-badge">Our story</span>
+          <h2 id="lp-hl-title" className="lp-section-title">
+            A <em>fairer</em> way to sell the harvest
+          </h2>
+          <p className="lp-section-sub">
+            Two rice farmers, a middleman&rsquo;s truck, and the app that let them sell on their
+            own terms. The idea behind AgriFair, in a {formatTime(duration)} animated short.
           </p>
         </header>
 
-        <div className={`lp-hl-stage${started && !ended ? ' is-playing' : ''}`}>
+        <div className={`lp-hl-stage reveal${started && !ended ? ' is-playing' : ''}`}>
           <video
             ref={videoRef}
             className="lp-hl-video"
@@ -159,13 +154,13 @@ export default function HighlightsSection() {
               </span>
               <span className="lp-hl-overlay-text">
                 <strong>{ended ? 'Watch again' : 'Watch the story'}</strong>
-                <span>{formatTime(duration)} · sound on</span>
+                <span>{formatTime(duration)}, with sound</span>
               </span>
             </button>
           )}
         </div>
 
-        <ol className="lp-hl-chapters" aria-label="Scenes">
+        <ol className="lp-hl-chapters reveal" aria-label="Scenes" style={{ '--i': 1 }}>
           {CHAPTERS.map((chapter, i) => {
             const active = i === activeIndex && !ended;
             return (
@@ -177,11 +172,10 @@ export default function HighlightsSection() {
                   aria-current={active ? 'step' : undefined}
                 >
                   <span className="lp-hl-thumb">
-                    <img src={chapter.image} alt="" loading="lazy" decoding="async" />
-                    <span className="lp-hl-time">{formatTime(chapter.start)}</span>
+                    <img src={chapter.image} alt="" width="320" height="180" loading="lazy" decoding="async" />
                   </span>
                   <span className="lp-hl-chapter-copy">
-                    <span className="lp-hl-chapter-num">Scene {i + 1}</span>
+                    <span className="lp-hl-time">{formatTime(chapter.start)}</span>
                     <strong>{chapter.title}</strong>
                     <span>{chapter.text}</span>
                   </span>

@@ -1,158 +1,66 @@
-/* Live delivery map — OpenStreetMap tiles via Leaflet, no API key required. */
-
-.dm-root {
-  padding: 1.15rem 1.3rem 1.3rem;
-  border: 1px solid var(--border);
-  border-radius: var(--rl);
-  background: var(--card);
-  box-shadow: var(--shs);
-}
-
-.dm-head {
-  display: flex;
-  align-items: flex-start;
-  justify-content: space-between;
-  gap: 0.9rem;
-  flex-wrap: wrap;
-  margin-bottom: 0.9rem;
-}
-
-.dm-head h2 {
-  margin: 0.2rem 0 0;
-  font-family: 'Fraunces', serif;
-  font-size: 1.05rem;
-  font-weight: 700;
-  letter-spacing: -0.012em;
-  color: var(--ink);
-}
-
-.dm-notice {
-  display: flex;
-  gap: 0.6rem;
-  padding: 0.7rem 0.85rem;
-  margin-bottom: 0.9rem;
-  border-radius: 10px;
-  background: rgba(201, 168, 76, 0.16);
-  color: #7a5f18;
-  font-size: 0.8rem;
-  line-height: 1.5;
-}
-
-.dm-notice svg { flex-shrink: 0; margin-top: 0.1rem; }
+/* Delivery map: OpenStreetMap tiles through Leaflet, no API key. */
 
 .dm-map {
   height: 320px;
-  border-radius: 12px;
+  border-radius: var(--r-control);
   overflow: hidden;
   border: 1px solid var(--border);
 }
 
 .dm-map .leaflet-container {
-  height: 100%;
   width: 100%;
-  background: #eae7dd;
+  height: 100%;
+  font-family: var(--font);
+  background: var(--surface-2);
 }
 
-/* Pins, drawn in CSS so no marker image has to resolve through the bundler. */
+/* Pins are drawn in CSS so no marker image has to resolve through the bundler. */
+.dm-pin-wrap {
+  background: none;
+  border: 0;
+}
+
 .dm-pin {
-  width: 20px;
-  height: 20px;
-  border-radius: 50%;
+  width: 18px;
+  height: 18px;
+  margin: 4px;
   border: 3px solid #fff;
-  box-shadow: 0 4px 10px rgba(18, 33, 18, 0.3);
+  border-radius: 50%;
+  box-shadow: 0 1px 4px rgb(0 0 0 / 0.35);
 }
 
-/* Only the rider pulses — the two ends are not going anywhere. */
-.dm-pin--rider {
-  background: #C0483A;
-  box-shadow: 0 0 0 2px rgba(192, 72, 58, 0.35), 0 4px 10px rgba(18, 33, 18, 0.3);
-  animation: dm-pulse 2s ease-out infinite;
+.dm-pin--shop,
+.dm-dot--shop {
+  background: #2c6b45;
 }
 
-.dm-pin--shop { background: #1B3829; }
-.dm-pin--door { background: #C9A96E; }
-
-@keyframes dm-pulse {
-  0%   { box-shadow: 0 0 0 2px rgba(192, 72, 58, 0.35), 0 4px 10px rgba(18, 33, 18, 0.3); }
-  70%  { box-shadow: 0 0 0 14px rgba(192, 72, 58, 0), 0 4px 10px rgba(18, 33, 18, 0.3); }
-  100% { box-shadow: 0 0 0 2px rgba(192, 72, 58, 0), 0 4px 10px rgba(18, 33, 18, 0.3); }
+.dm-pin--door,
+.dm-dot--door {
+  background: #b3261e;
 }
 
-@media (prefers-reduced-motion: reduce) {
-  .dm-pin--rider { animation: none; }
+.dm-pin--rider,
+.dm-dot--rider {
+  background: #1f5785;
 }
 
-.dm-actions { display: flex; gap: 0.4rem; flex-wrap: wrap; }
+.dm-legend {
+  display: grid;
+  gap: 6px;
+  list-style: none;
+  font-size: 13px;
+  color: var(--text-2);
+}
 
-/* The two ends in words, under the map. The pin says where; this says what. */
-.dm-legs {
+.dm-legend li {
   display: flex;
-  flex-direction: column;
-  gap: 0.35rem;
-  margin-top: 0.6rem;
-  font-size: 0.78rem;
-  color: var(--ink-soft, #4b5a4f);
+  align-items: center;
+  gap: 8px;
 }
-
-.dm-leg { display: inline-flex; align-items: center; gap: 0.4rem; }
-.dm-leg svg { flex-shrink: 0; opacity: 0.7; }
 
 .dm-dot {
-  width: 9px;
-  height: 9px;
+  flex: none;
+  width: 10px;
+  height: 10px;
   border-radius: 50%;
-  flex-shrink: 0;
-}
-
-.dm-dot--shop { background: #1B3829; }
-.dm-dot--door { background: #C9A96E; }
-
-/* Says which end is missing — that is the part somebody can go and fix. */
-.dm-gap {
-  margin: 0.5rem 0 0;
-  font-size: 0.75rem;
-  color: #8a6d3b;
-}
-
-.dm-meta {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 0.45rem 1.1rem;
-  margin-top: 0.8rem;
-  font-size: 0.77rem;
-  color: var(--soft);
-}
-
-.dm-meta span { display: inline-flex; align-items: center; gap: 0.3rem; }
-.dm-dest { max-width: 100%; }
-
-.dm-empty {
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  justify-content: center;
-  gap: 0.55rem;
-  min-height: 180px;
-  text-align: center;
-  color: var(--soft);
-}
-
-.dm-empty svg { opacity: 0.4; }
-.dm-empty p { margin: 0; font-size: 0.82rem; max-width: 38ch; }
-
-.dm-skeleton {
-  height: 260px;
-  border-radius: var(--rl);
-  background: linear-gradient(90deg, rgba(18, 33, 18, 0.06) 25%, rgba(18, 33, 18, 0.11) 37%, rgba(18, 33, 18, 0.06) 63%);
-  background-size: 400% 100%;
-  animation: ap-shimmer 1.3s ease infinite;
-}
-
-/* A barangay pin is an area, and saying so keeps a rider from trusting it as
-   a doorstep. */
-.dm-approx {
-  margin-left: 1.15rem;
-  font-size: 0.72rem;
-  line-height: 1.45;
-  color: #8a6d3b;
 }

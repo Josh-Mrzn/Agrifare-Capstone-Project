@@ -1,126 +1,78 @@
-import React, { useEffect, useMemo, useState } from 'react';
-import { useNavigate } from 'react-router-dom';
-import './SuperAdminPage.css';
-import logoImg from '../../assets/logo.png';
+import React, { useCallback, useEffect, useMemo, useState } from 'react';
+import { useNavigate, useSearchParams } from 'react-router-dom';
 import {
-  LayoutGrid,
-  Users,
-  BarChart3,
-  Settings as SettingsIcon,
-  ShoppingCart,
-  CheckCircle2,
-  Clock,
-  Menu,
-  X,
-  ScrollText,
-  BadgeCheck,
-  Eye,
-  Pencil,
-  Trash2,
-  Plus,
-  Download,
-  ShieldCheck,
-  ShieldOff,
-  CalendarDays,
+  LayoutGrid, Users, BadgeCheck, ScrollText, BarChart3, Settings, Download, Plus,
+  ArrowRight, Store, ShoppingCart, Clock,
 } from 'lucide-react';
+import PortalShell from '../../components/PortalShell';
+import Modal, { ConfirmDialog } from '../../components/Modal';
+import ActionsMenu from '../../components/ActionsMenu';
 import {
   fetchAllUsers,
   suspendUser,
   activateUser,
   approveSeller,
+  rejectSeller,
   fetchPendingApprovals,
   deleteUserAccount,
   createUserAccount,
   updateUserAccount,
-  fetchAuditLogs,
-  fetchUserAnalytics,
   fetchPlatformRevenue,
 } from '../../services/superAdminApi';
+import { getErrorMessage } from '../../services/authApi';
 import AuditLogPanel from './AuditLogPanel';
 import CredentialsPanel from './CredentialsPanel';
 import BusinessAnalytics from './BusinessAnalytics';
 import SettingsPanel from './SettingsPanel';
-import RowActionsMenu from './RowActionsMenu';
 import UserDetailView from './UserDetailView';
 import { clearSession, getSessionUser } from '../../utils/auth';
 import { exportToCsv } from '../../utils/csv';
+import { number, formatDate } from '../../utils/format';
+import './SuperAdminPage.css';
 
-const TABS = [
-  { id: 'Overview', icon: LayoutGrid, label: 'Overview' },
-  { id: 'UserManagement', icon: Users, label: 'User Management' },
-  { id: 'Credentials', icon: BadgeCheck, label: 'Credentials' },
-  { id: 'AuditLogs', icon: ScrollText, label: 'Audit Logs' },
-  { id: 'Analytics', icon: BarChart3, label: 'Analytics' },
-  { id: 'Settings', icon: SettingsIcon, label: 'Settings' },
+const SECTIONS = [
+  { id: 'overview', label: 'Overview', icon: LayoutGrid },
+  { id: 'users', label: 'Users', icon: Users },
+  { id: 'credentials', label: 'Credentials', icon: BadgeCheck },
+  { id: 'analytics', label: 'Analytics', icon: BarChart3 },
+  { id: 'audit', label: 'Audit log', icon: ScrollText },
+  { id: 'settings', label: 'Settings', icon: Settings },
 ];
 
 const ROLE_FILTERS = [
-  { value: 'all', label: 'All' },
-  { value: 'superadmin', label: 'Admin' },
-  { value: 'seller', label: 'Seller' },
-  { value: 'buyer', label: 'Buyer' },
+  { id: 'all', label: 'Everyone' },
+  { id: 'seller', label: 'Sellers' },
+  { id: 'buyer', label: 'Buyers' },
+  { id: 'rider', label: 'Riders' },
+  { id: 'superadmin', label: 'Admins' },
 ];
 
-const EMPTY_USER_FORM = { name: '', email: '', password: '', role: 'seller', status: 'active' };
+const ROLE_LABEL = { seller: 'Seller', buyer: 'Buyer', rider: 'Rider', superadmin: 'Super Admin' };
 
-export default function SuperAdminPage({ onLogout }) {
+const STATUS_TONE = { active: 'success', pending: 'warning', suspended: 'danger', rejected: '' };
+
+const statusBadgeOf = (status = 'active') => (
+  <span className={`badge${STATUS_TONE[status] ? ` badge-${STATUS_TONE[status]}` : ''}`}>
+    {status[0].toUpperCase() + status.slice(1)}
+  </span>
+);
+
+const idOf = (u) => u.userId ?? u._id;
+
+export default function SuperAdminPage() {
   const navigate = useNavigate();
-  const [user, setUser] = useState({ email: '', role: 'superadmin', name: '' });
-  const [activeTab, setActiveTab] = useState('Overview');
-  const [sidebarOpen, setSidebarOpen] = useState(false);
-  const [showLogout, setShowLogout] = useState(false);
-  const [accounts, setAccounts] = useState([]);
+  const [params, setParams] = useSearchParams();
+  const me = getSessionUser() || {};
+  const active = SECTIONS.some((s) => s.id === params.get('tab')) ? params.get('tab') : 'overview';
+  const go = (id) => setParams(id === 'overview' ? {} : { tab: id });
+
+  const [accounts, setAccounts] = useState(null);
   const [pending, setPending] = useState([]);
-  const [roleFilter, setRoleFilter] = useState('all');
-  const [loadingAccounts, setLoadingAccounts] = useState(false);
-  const [accountsError, setAccountsError] = useState('');
-  const [revenue, setRevenue] = useState(0);
+  const [revenue, setRevenue] = useState(null);
+  const [error, setError] = useState('');
+  const [notice, setNotice] = useState('');
 
-  // Create / edit account modal
-  const [showUserModal, setShowUserModal] = useState(false);
-  const [editingUser, setEditingUser] = useState(null);
-  const [userForm, setUserForm] = useState(EMPTY_USER_FORM);
-  const [savingUser, setSavingUser] = useState(false);
-  const [userFormError, setUserFormError] = useState('');
-
-  // Delete confirm
-  const [deleteTarget, setDeleteTarget] = useState(null);
-
-  // Per-user detail view
-  const [detailUser, setDetailUser] = useState(null);
-  const [detailAnalytics, setDetailAnalytics] = useState(null);
-  const [detailLoading, setDetailLoading] = useState(false);
-
-  // Audit logs
-  const [auditLogs, setAuditLogs] = useState([]);
-  const [auditPage, setAuditPage] = useState(1);
-  const [auditTotalPages, setAuditTotalPages] = useState(1);
-  const [auditActionFilter, setAuditActionFilter] = useState('');
-  const [auditLoading, setAuditLoading] = useState(false);
-
-  useEffect(() => {
-    const sessionUser = getSessionUser();
-    if (sessionUser) setUser(sessionUser);
-  }, []);
-
-  useEffect(() => {
-    if (activeTab === 'UserManagement' || activeTab === 'Overview') {
-      loadAccounts();
-    }
-    if (activeTab === 'Overview') {
-      fetchPlatformRevenue()
-        .then((res) => setRevenue(res.data?.total || 0))
-        .catch(() => setRevenue(0));
-    }
-    if (activeTab === 'AuditLogs') {
-      loadAuditLogs(1, false);
-    }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [activeTab]);
-
-  async function loadAccounts() {
-    setLoadingAccounts(true);
-    setAccountsError('');
+  const loadAccounts = useCallback(async () => {
     try {
       const [usersRes, pendingRes] = await Promise.all([
         fetchAllUsers(),
@@ -128,200 +80,304 @@ export default function SuperAdminPage({ onLogout }) {
       ]);
       const list = usersRes.data?.users || usersRes.data || [];
       setAccounts(Array.isArray(list) ? list : []);
-      const pendingList = pendingRes.data?.users || pendingRes.data || [];
-      setPending(Array.isArray(pendingList) ? pendingList : []);
+      const waiting = pendingRes.data?.users || pendingRes.data || [];
+      setPending(Array.isArray(waiting) ? waiting.filter((u) => u.role === 'seller') : []);
+      setError('');
     } catch (err) {
-      setAccountsError(
-        err.response?.data?.error || err.response?.data?.message || 'Failed to load accounts'
-      );
-    } finally {
-      setLoadingAccounts(false);
+      setError(getErrorMessage(err, 'Could not load the accounts.'));
+      setAccounts((prev) => prev || []);
     }
-  }
+  }, []);
 
-  async function loadAuditLogs(page, append, actionOverride) {
-    const action = actionOverride !== undefined ? actionOverride : auditActionFilter;
-    setAuditLoading(true);
+  useEffect(() => {
+    // loadAccounts() sets state only after its await, which this rule cannot see.
+    // eslint-disable-next-line react-hooks/set-state-in-effect
+    loadAccounts();
+    fetchPlatformRevenue()
+      .then((res) => setRevenue(res.data?.total || 0))
+      .catch(() => setRevenue(0));
+  }, [loadAccounts]);
+
+  async function run(fn, done, fallback) {
+    setError('');
+    setNotice('');
     try {
-      const res = await fetchAuditLogs({ page, limit: 20, action: action || undefined });
-      const data = res.data || {};
-      setAuditLogs((prev) => (append ? [...prev, ...(data.logs || [])] : data.logs || []));
-      setAuditPage(data.page || 1);
-      setAuditTotalPages(data.totalPages || 1);
-    } catch {
-      if (!append) setAuditLogs([]);
-    } finally {
-      setAuditLoading(false);
+      await fn();
+      if (done) setNotice(done);
+      await loadAccounts();
+      return true;
+    } catch (err) {
+      setError(getErrorMessage(err, fallback));
+      return false;
     }
   }
 
-  function handleLogout() {
+  const signOut = () => {
     clearSession();
-    if (onLogout) onLogout();
     navigate('/login');
-  }
+  };
 
-  const counts = useMemo(() => {
-    const sellers = accounts.filter((u) => u.role === 'seller').length;
-    const buyers = accounts.filter((u) => u.role === 'buyer').length;
-    const activeSellers = accounts.filter((u) => u.role === 'seller' && u.status === 'active').length;
-    return { sellers, buyers, activeSellers, total: accounts.length };
-  }, [accounts]);
+  const sections = SECTIONS.map((s) => (s.id === 'users' ? { ...s, count: pending.length } : s));
 
-  const filteredAccounts = useMemo(() => {
-    if (roleFilter === 'all') return accounts;
-    return accounts.filter((u) => u.role === roleFilter);
-  }, [accounts, roleFilter]);
+  const content = {
+    overview: <Overview accounts={accounts} pending={pending} revenue={revenue} run={run} go={go} />,
+    users: <UsersSection accounts={accounts} pending={pending} run={run} me={me} />,
+    credentials: <CredentialsPanel />,
+    analytics: <BusinessAnalytics />,
+    audit: <AuditLogPanel />,
+    settings: <SettingsPanel />,
+  }[active];
 
-  const initials = user.email ? user.email.slice(0, 2).toUpperCase() : 'SA';
-  const displayName = user.name || user.email?.split('@')[0] || 'Admin';
-  const now = new Date();
-  const todayWeekday = now.toLocaleDateString('en-PH', { weekday: 'long' });
-  const todayDate = now.toLocaleDateString('en-PH', {
-    month: 'long',
-    day: 'numeric',
-    year: 'numeric',
-  });
+  return (
+    <PortalShell
+      portalName="Super Admin"
+      roleLabel="Super Admin"
+      workspaceLabel="Platform control"
+      sections={sections}
+      active={active}
+      onSelect={go}
+      user={me}
+      onSignOut={signOut}
+    >
+      <div className="live" aria-live="polite">
+        {error && <p className="alert alert-danger">{error}</p>}
+        {notice && <p className="alert alert-success">{notice}</p>}
+      </div>
+      {content}
+    </PortalShell>
+  );
+}
 
-  const overviewStats = [
-    { label: 'Sellers', value: counts.sellers, icon: Users, tone: 'green' },
-    { label: 'Buyers', value: counts.buyers, icon: ShoppingCart, tone: 'gold' },
-    { label: 'Active sellers', value: counts.activeSellers, icon: CheckCircle2, tone: 'teal' },
-    { label: 'Pending', value: pending.length, icon: Clock, tone: 'coral' },
-  ];
+/* ------------------------------------------------------------- Overview */
 
-  const approvalRate = counts.sellers
-    ? Math.round((counts.activeSellers / counts.sellers) * 100)
-    : 0;
+function Overview({ accounts, pending, revenue, run, go }) {
+  const [rejecting, setRejecting] = useState(null);
 
-  function pct(part, whole) {
-    return whole ? Math.round((part / whole) * 100) : 0;
-  }
+  if (!accounts) return <div className="skeleton" style={{ height: 96 }} />;
 
-  // --- Account CRUD handlers ---
-  function openCreateUser() {
-    setEditingUser(null);
-    setUserForm(EMPTY_USER_FORM);
-    setUserFormError('');
-    setShowUserModal(true);
-  }
+  const count = (role, status) => accounts.filter((u) => u.role === role && (!status || u.status === status)).length;
+  const newest = [...accounts]
+    .sort((a, b) => new Date(b.createdAt || 0) - new Date(a.createdAt || 0))
+    .slice(0, 6);
 
-  function openEditUser(u) {
-    setEditingUser(u);
-    setUserForm({
-      name: u.name || '',
-      email: u.email || '',
-      password: '',
-      role: u.role || 'seller',
-      status: u.status || 'active',
-    });
-    setUserFormError('');
-    setShowUserModal(true);
-  }
+  return (
+    <>
+      <section className="sa-hero">
+        <div className="sa-hero-top">
+          <span className="eyebrow">Sales on AgriFair</span>
+          <span className="sa-hero-period">All time</span>
+        </div>
+        <p className="sa-hero-value num">
+          <span>₱</span>{revenue == null ? '…' : number(Math.round(revenue))}
+        </p>
+        <p className="sa-hero-note">Money that changed hands through AgriFair, from orders sellers completed.</p>
+        <div className="sa-hero-chips">
+          <span><small>Accounts</small>{number(accounts.length)}</span>
+          <span><small>Sellers active</small>{count('seller') ? Math.round((count('seller', 'active') / count('seller')) * 100) : 0}%</span>
+          <span><small>Delivery riders</small>{number(count('rider'))}</span>
+        </div>
+        <button type="button" className="sa-hero-link" onClick={() => go('analytics')}>
+          See the breakdown <ArrowRight size={15} aria-hidden="true" />
+        </button>
+      </section>
 
-  function closeUserModal() {
-    setShowUserModal(false);
-    setEditingUser(null);
-    setUserForm(EMPTY_USER_FORM);
-    setUserFormError('');
-  }
+      <div className="stats" style={{ '--cols': 3 }}>
+        <button type="button" className="stat" onClick={() => go('users')}>
+          <span className="stat-icon"><Store size={19} aria-hidden="true" /></span>
+          <span className="stat-label">Active sellers</span>
+          <span className="stat-value">{number(count('seller', 'active'))}</span>
+          <span className="stat-note">{number(count('seller'))} registered, {number(count('seller', 'suspended'))} suspended</span>
+        </button>
+        <button type="button" className="stat stat--gold" onClick={() => go('users')}>
+          <span className="stat-icon"><ShoppingCart size={19} aria-hidden="true" /></span>
+          <span className="stat-label">Buyers</span>
+          <span className="stat-value">{number(count('buyer'))}</span>
+          <span className="stat-note">Shopping through the app</span>
+        </button>
+        <button type="button" className="stat" onClick={() => go('users')}>
+          <span className="stat-icon"><Clock size={19} aria-hidden="true" /></span>
+          <span className="stat-label">Waiting for approval</span>
+          <span className="stat-value">{number(pending.length)}</span>
+          <span className={`stat-note${pending.length ? ' is-warn' : ''}`}>{pending.length ? 'Seller applications to review' : 'Nothing waiting'}</span>
+        </button>
+      </div>
 
-  async function handleUserFormSubmit(e) {
+      <div className="split-grid split-grid-even">
+        <PendingSellers pending={pending} run={run} onReject={setRejecting} />
+
+        <section className="panel">
+          <div className="panel-head">
+            <h2>Newest accounts</h2>
+            <button type="button" className="btn btn-ghost btn-sm" onClick={() => go('users')}>All users</button>
+          </div>
+          <ul className="list">
+            {newest.map((u) => (
+              <li key={idOf(u)} className="list-row">
+                <span className="list-row-main">
+                  <strong>{u.name || u.email}</strong>
+                  <span>{ROLE_LABEL[u.role] || u.role}, joined {formatDate(u.createdAt, 'recently')}</span>
+                </span>
+                {statusBadgeOf(u.status)}
+              </li>
+            ))}
+          </ul>
+        </section>
+      </div>
+
+      {rejecting && <RejectDialog seller={rejecting} run={run} onClose={() => setRejecting(null)} />}
+    </>
+  );
+}
+
+function PendingSellers({ pending, run, onReject }) {
+  return (
+    <section className="panel">
+      <div className="panel-head">
+        <div>
+          <h2>Seller applications</h2>
+          <p>Approve a seller once their details check out. They can then sign in and list rice.</p>
+        </div>
+      </div>
+      {pending.length === 0 ? (
+        <div className="empty"><p>No applications waiting.</p></div>
+      ) : (
+        <ul className="list">
+          {pending.map((u) => (
+            <li key={idOf(u)} className="list-row">
+              <span className="list-row-main">
+                <strong>{u.name}</strong>
+                <span>{u.email}, applied {formatDate(u.createdAt, 'recently')}{u.emailVerified ? '' : ', email not verified yet'}</span>
+              </span>
+              <span className="list-row-side">
+                <button type="button" className="btn btn-secondary btn-sm" onClick={() => onReject(u)}>Reject</button>
+                <button
+                  type="button"
+                  className="btn btn-primary btn-sm"
+                  onClick={() => run(() => approveSeller(idOf(u)), `${u.name} is approved and can now sign in.`, 'Could not approve this seller.')}
+                >
+                  Approve
+                </button>
+              </span>
+            </li>
+          ))}
+        </ul>
+      )}
+    </section>
+  );
+}
+
+function RejectDialog({ seller, run, onClose }) {
+  const [reason, setReason] = useState('');
+  const [busy, setBusy] = useState(false);
+
+  async function submit(e) {
     e.preventDefault();
-    setUserFormError('');
-
-    if (!userForm.name.trim() || !userForm.email.trim()) {
-      setUserFormError('Name and email are required.');
-      return;
-    }
-    if (!editingUser && !userForm.password) {
-      setUserFormError('Password is required for a new account.');
-      return;
-    }
-
-    setSavingUser(true);
-    try {
-      if (editingUser) {
-        const targetId = editingUser.userId ?? editingUser._id;
-        const payload = { name: userForm.name, email: userForm.email, role: userForm.role, status: userForm.status };
-        if (userForm.password) payload.password = userForm.password;
-        await updateUserAccount(targetId, payload);
-      } else {
-        await createUserAccount(userForm);
-      }
-      closeUserModal();
-      await loadAccounts();
-    } catch (err) {
-      setUserFormError(err.response?.data?.error || err.response?.data?.message || 'Could not save this account.');
-    } finally {
-      setSavingUser(false);
-    }
+    if (!reason.trim()) return;
+    setBusy(true);
+    const ok = await run(
+      () => rejectSeller(idOf(seller), reason.trim()),
+      `${seller.name}'s application was rejected.`,
+      'Could not reject this application.',
+    );
+    if (ok) onClose();
+    else setBusy(false);
   }
 
-  async function handleToggleStatus(u) {
-    const id = u.userId ?? u._id;
-    const nextStatus = u.status === 'suspended' ? 'active' : 'suspended';
-    try {
-      if (u.status === 'suspended') {
-        await activateUser(id);
-      } else {
-        await suspendUser(id);
-      }
-      // Keep the open detail view in sync with the change we just made.
-      setDetailUser((prev) => (prev && (prev.userId ?? prev._id) === id ? { ...prev, status: nextStatus } : prev));
-      await loadAccounts();
-    } catch (err) {
-      setAccountsError(
-        err.response?.data?.error || err.response?.data?.message || 'Could not update this account.'
-      );
-    }
+  return (
+    <Modal title={`Reject ${seller.name}?`} onClose={onClose}>
+      <form onSubmit={submit}>
+        <div className="modal-body">
+          <p>They see your reason when they try to sign in. The decision is kept in the audit log.</p>
+          <label className="field">
+            <span className="field-label">Reason</span>
+            <input className="input" value={reason} onChange={(e) => setReason(e.target.value)} placeholder="No business permit uploaded…" autoComplete="off" />
+          </label>
+        </div>
+        <div className="modal-actions">
+          <button type="button" className="btn btn-secondary" onClick={onClose}>Cancel</button>
+          <button type="submit" className="btn btn-danger" disabled={busy || !reason.trim()}>Reject application</button>
+        </div>
+      </form>
+    </Modal>
+  );
+}
+
+/* ---------------------------------------------------------------- Users */
+
+function UsersSection({ accounts, pending, run, me }) {
+  const [role, setRole] = useState('all');
+  const [search, setSearch] = useState('');
+  const [editing, setEditing] = useState(null); // null | 'new' | user
+  const [deleting, setDeleting] = useState(null);
+  const [rejecting, setRejecting] = useState(null);
+  const [viewing, setViewing] = useState(null);
+
+  const shown = useMemo(() => (accounts || []).filter((u) => {
+    if (role !== 'all' && u.role !== role) return false;
+    const q = search.trim().toLowerCase();
+    return !q || `${u.name} ${u.email} ${u.userId}`.toLowerCase().includes(q);
+  }), [accounts, role, search]);
+
+  if (!accounts) return <div className="panel"><div className="skeleton-rows"><div className="skeleton" /><div className="skeleton" /></div></div>;
+
+  function toggle(u) {
+    const suspended = u.status === 'suspended';
+    return run(
+      () => (suspended ? activateUser(idOf(u)) : suspendUser(idOf(u))),
+      suspended ? `${u.name} can sign in again.` : `${u.name} is suspended and signed out.`,
+      'Could not change this account.',
+    );
   }
 
-  async function handleConfirmDelete() {
-    if (!deleteTarget) return;
-    const deletedId = deleteTarget.userId ?? deleteTarget._id;
-    try {
-      await deleteUserAccount(deletedId);
-      setDeleteTarget(null);
-      // If the deleted account is the one on screen, leave the detail workspace.
-      setDetailUser((prev) => (prev && (prev.userId ?? prev._id) === deletedId ? null : prev));
-      await loadAccounts();
-    } catch {
-      setDeleteTarget(null);
-    }
+  const dialogs = (
+    <>
+      {editing && (
+        <AccountForm user={editing === 'new' ? null : editing} run={run} onClose={() => setEditing(null)} />
+      )}
+      {rejecting && <RejectDialog seller={rejecting} run={run} onClose={() => setRejecting(null)} />}
+      {deleting && (
+        <ConfirmDialog
+          title={`Delete ${deleting.name || deleting.email}?`}
+          confirmLabel="Delete account"
+          danger
+          onClose={() => setDeleting(null)}
+          onConfirm={async () => {
+            await run(() => deleteUserAccount(idOf(deleting)), `${deleting.name || deleting.email} was deleted.`, 'Could not delete this account.');
+            setDeleting(null);
+            setViewing(null);
+          }}
+        >
+          <p>This removes the account from AgriFair for good. Their past orders keep their name. To stop someone signing in without losing anything, suspend them instead.</p>
+        </ConfirmDialog>
+      )}
+    </>
+  );
+
+  if (viewing) {
+    const current = accounts.find((u) => idOf(u) === idOf(viewing)) || viewing;
+    return (
+      <>
+        <UserDetailView
+          user={current}
+          onBack={() => setViewing(null)}
+          onEdit={() => setEditing(current)}
+          onToggleStatus={() => toggle(current)}
+        />
+        {dialogs}
+      </>
+    );
   }
 
-  async function openDetail(u) {
-    setDetailUser(u);
-    setDetailAnalytics(null);
-    if (u.role === 'seller') {
-      setDetailLoading(true);
-      try {
-        const res = await fetchUserAnalytics(u.userId ?? u._id);
-        setDetailAnalytics(res.data);
-      } catch {
-        setDetailAnalytics(null);
-      } finally {
-        setDetailLoading(false);
-      }
-    }
-  }
-
-  function closeDetail() {
-    setDetailUser(null);
-    setDetailAnalytics(null);
-  }
-
-  function handleExportCsv() {
+  function exportCsv() {
     exportToCsv(
       'agrifair-accounts.csv',
-      filteredAccounts.map((u) => ({
+      shown.map((u) => ({
         userId: u.userId ?? '',
         name: u.name || '',
         email: u.email || '',
-        role: u.role || '',
+        role: ROLE_LABEL[u.role] || u.role || '',
         status: u.status || '',
-        joined: u.createdAt ? new Date(u.createdAt).toLocaleDateString() : '',
+        joined: formatDate(u.createdAt),
       })),
       [
         { key: 'userId', label: 'User ID' },
@@ -330,557 +386,183 @@ export default function SuperAdminPage({ onLogout }) {
         { key: 'role', label: 'Role' },
         { key: 'status', label: 'Status' },
         { key: 'joined', label: 'Joined' },
-      ]
+      ],
     );
   }
 
-  function renderContent() {
-    switch (activeTab) {
-      case 'Overview':
-        return (
-          <div className="sa-tab">
-            <section className="sa-revenue-hero">
-              <div className="sa-revenue-hero-glow" aria-hidden="true" />
-              <div className="sa-revenue-top">
-                <span className="sa-revenue-eyebrow">Ecosystem revenue</span>
-                <span className="sa-revenue-period">All-time</span>
-              </div>
-              <div className="sa-revenue-value">
-                <span className="sa-revenue-currency">₱</span>
-                {Number(revenue).toLocaleString('en-PH', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
-              </div>
-              <p className="sa-revenue-note">
-                Total money moved across the AgriFair platform, from completed sales recorded by sellers.
-              </p>
-              <div className="sa-revenue-chips">
-                <div className="sa-revenue-chip">
-                  <span className="sa-revenue-chip-label">Total accounts</span>
-                  <span className="sa-revenue-chip-value">{counts.total}</span>
-                </div>
-                <div className="sa-revenue-chip">
-                  <span className="sa-revenue-chip-label">Sellers active</span>
-                  <span className="sa-revenue-chip-value">{approvalRate}%</span>
-                </div>
-                <div className="sa-revenue-chip">
-                  <span className="sa-revenue-chip-label">Pending approvals</span>
-                  <span className="sa-revenue-chip-value">{pending.length}</span>
-                </div>
-              </div>
-            </section>
+  return (
+    <>
+      {pending.length > 0 && <PendingSellers pending={pending} run={run} onReject={setRejecting} />}
 
-            <section className="sa-stats">
-              {overviewStats.map((s) => (
-                <article key={s.label} className={`sa-stat-v2 sa-stat-v2--${s.tone}`}>
-                  <div className="sa-stat-v2-icon">
-                    <s.icon size={20} strokeWidth={2.25} />
-                  </div>
-                  <div className="sa-stat-v2-body">
-                    <div className="sa-stat-v2-value">{s.value}</div>
-                    <div className="sa-stat-v2-label">{s.label}</div>
-                  </div>
-                </article>
-              ))}
-            </section>
+      <div className="page-actions">
+        <div className="chips" role="group" aria-label="Show">
+          {ROLE_FILTERS.map((f) => (
+            <button key={f.id} type="button" className="chip" aria-pressed={role === f.id} onClick={() => setRole(f.id)}>
+              {f.label} <span className="chip-count">{f.id === 'all' ? accounts.length : accounts.filter((u) => u.role === f.id).length}</span>
+            </button>
+          ))}
+        </div>
+        <span className="toolbar">
+          <button type="button" className="btn btn-secondary" onClick={exportCsv}>
+            <Download size={16} aria-hidden="true" /> Export CSV
+          </button>
+          <button type="button" className="btn btn-primary" onClick={() => setEditing('new')}>
+            <Plus size={16} aria-hidden="true" /> New account
+          </button>
+        </span>
+      </div>
 
-            <section className="sa-grid-2">
-              <div className="sa-panel">
-                <div className="sa-panel-head">
-                  <div>
-                    <span className="sa-panel-tag">Activity</span>
-                    <h2>Recent activity</h2>
-                  </div>
-                </div>
-                {pending.length === 0 && accounts.length === 0 ? (
-                  <p className="sa-empty">
-                    Platform activity will show here. Approve sellers from User Management when registrations come in.
-                  </p>
-                ) : (
-                  <div className="sa-table-wrap">
-                    <table className="sa-table">
-                      <thead>
-                        <tr>
-                          <th>User</th>
-                          <th>Role</th>
-                          <th>Status</th>
-                        </tr>
-                      </thead>
-                      <tbody>
-                        {(pending.length ? pending : accounts).slice(0, 6).map((u) => (
-                          <tr key={u._id || u.userId}>
-                            <td>{u.name || u.email}</td>
-                            <td>{u.role}</td>
-                            <td>
-                              <span className={`sa-badge sa-badge-${(u.status || 'active').toLowerCase()}`}>
-                                {u.status || 'active'}
-                              </span>
-                            </td>
-                          </tr>
-                        ))}
-                      </tbody>
-                    </table>
-                  </div>
-                )}
-              </div>
-
-              <div className="sa-panel sa-panel-dark">
-                <div className="sa-panel-head">
-                  <div>
-                    <span className="sa-panel-tag">Composition</span>
-                    <h2>Role mix</h2>
-                  </div>
-                </div>
-                <div className="sa-progress-list">
-                  <div className="sa-progress-item">
-                    <div className="sa-progress-meta">
-                      <span>Sellers ({counts.sellers} of {counts.total})</span>
-                      <span>{pct(counts.sellers, counts.total)}%</span>
-                    </div>
-                    <div className="sa-progress-track">
-                      <div
-                        className="sa-progress-fill"
-                        style={{ width: `${pct(counts.sellers, counts.total)}%` }}
+      <section className="panel">
+        <div className="panel-head">
+          <label className="sr-only" htmlFor="user-search">Search accounts</label>
+          <input
+            id="user-search"
+            className="input search-input"
+            type="search"
+            placeholder="Search name, email or ID…"
+            autoComplete="off"
+            value={search}
+            onChange={(e) => setSearch(e.target.value)}
+          />
+        </div>
+        {shown.length === 0 ? (
+          <div className="empty"><p>No accounts match.</p></div>
+        ) : (
+          <div className="table-wrap">
+            <table className="table table-stack">
+              <thead>
+                <tr>
+                  <th>Name</th>
+                  <th>Role</th>
+                  <th>Status</th>
+                  <th>Joined</th>
+                  <th className="is-actions"><span className="sr-only">Actions</span></th>
+                </tr>
+              </thead>
+              <tbody>
+                {shown.map((u) => (
+                  <tr key={idOf(u)}>
+                    <td className="is-primary">
+                      <span className="cell-main">
+                        <button type="button" className="row-link" onClick={() => setViewing(u)}>{u.name || 'Unnamed'}</button>
+                        <span>{u.email}, ID {u.userId ?? 'none'}</span>
+                      </span>
+                    </td>
+                    <td data-label="Role">{ROLE_LABEL[u.role] || u.role}</td>
+                    <td data-label="Status">{statusBadgeOf(u.status)}</td>
+                    <td data-label="Joined" className="muted">{formatDate(u.createdAt)}</td>
+                    <td className="is-actions">
+                      <ActionsMenu
+                        label={`Actions for ${u.name || u.email}`}
+                        items={[
+                          { label: 'View details', onClick: () => setViewing(u) },
+                          { label: 'Edit account', onClick: () => setEditing(u) },
+                          {
+                            label: u.status === 'suspended' ? 'Reinstate' : 'Suspend',
+                            hidden: u.role === 'superadmin' || u.status === 'pending' || u.status === 'rejected',
+                            separatorBefore: true,
+                            onClick: () => toggle(u),
+                          },
+                          {
+                            label: 'Delete',
+                            danger: true,
+                            hidden: idOf(u) === idOf(me),
+                            separatorBefore: u.role === 'superadmin',
+                            onClick: () => setDeleting(u),
+                          },
+                        ]}
                       />
-                    </div>
-                  </div>
-                  <div className="sa-progress-item">
-                    <div className="sa-progress-meta">
-                      <span>Buyers ({counts.buyers} of {counts.total})</span>
-                      <span>{pct(counts.buyers, counts.total)}%</span>
-                    </div>
-                    <div className="sa-progress-track">
-                      <div
-                        className="sa-progress-fill gold"
-                        style={{ width: `${pct(counts.buyers, counts.total)}%` }}
-                      />
-                    </div>
-                  </div>
-                  <div className="sa-progress-item">
-                    <div className="sa-progress-meta">
-                      <span>Active sellers ({counts.activeSellers} of {counts.sellers})</span>
-                      <span>{pct(counts.activeSellers, counts.sellers)}%</span>
-                    </div>
-                    <div className="sa-progress-track">
-                      <div
-                        className="sa-progress-fill teal"
-                        style={{ width: `${pct(counts.activeSellers, counts.sellers)}%` }}
-                      />
-                    </div>
-                  </div>
-                  <div className="sa-progress-item">
-                    <div className="sa-progress-meta">
-                      <span>Pending approvals</span>
-                      <span>{pending.length}</span>
-                    </div>
-                    <div className="sa-progress-track">
-                      <div
-                        className="sa-progress-fill coral"
-                        style={{ width: `${Math.min(100, pending.length * 20)}%` }}
-                      />
-                    </div>
-                  </div>
-                </div>
-              </div>
-            </section>
-          </div>
-        );
-
-      case 'UserManagement':
-        return (
-          <div className="sa-tab">
-            <section className="sa-panel">
-              <div className="sa-panel-head">
-                <div>
-                  <span className="sa-panel-tag">Directory</span>
-                  <h2>User accounts</h2>
-                </div>
-                <div className="sa-panel-actions">
-                  <button className="sa-btn-ghost" type="button" onClick={handleExportCsv}>
-                    <Download size={15} strokeWidth={2.25} style={{ marginRight: 6, verticalAlign: -2 }} />
-                    Export
-                  </button>
-                  <button className="sa-btn" type="button" onClick={loadAccounts}>
-                    Refresh
-                  </button>
-                  <button className="sa-btn" type="button" onClick={openCreateUser}>
-                    <Plus size={15} strokeWidth={2.5} style={{ marginRight: 6, verticalAlign: -2 }} />
-                    New Account
-                  </button>
-                </div>
-              </div>
-
-              <div className="sa-role-pills">
-                {ROLE_FILTERS.map((f) => (
-                  <button
-                    key={f.value}
-                    type="button"
-                    className={`sa-role-pill ${roleFilter === f.value ? 'active' : ''}`}
-                    onClick={() => setRoleFilter(f.value)}
-                  >
-                    {f.label}
-                  </button>
+                    </td>
+                  </tr>
                 ))}
-              </div>
-
-              {accountsError && <p className="sa-empty">{accountsError}</p>}
-              {loadingAccounts && <p className="sa-empty">Loading accounts…</p>}
-
-              {pending.length > 0 && (
-                <div style={{ marginBottom: '1.1rem' }}>
-                  <h3
-                    style={{
-                      margin: '0 0 0.7rem',
-                      fontFamily: 'Fraunces, serif',
-                      fontSize: '1.05rem',
-                      fontWeight: 700,
-                    }}
-                  >
-                    Pending seller approvals
-                  </h3>
-                  <div className="sa-table-wrap">
-                    <table className="sa-table">
-                      <thead>
-                        <tr>
-                          <th>Name</th>
-                          <th>Email</th>
-                          <th>Role</th>
-                          <th>Action</th>
-                        </tr>
-                      </thead>
-                      <tbody>
-                        {pending.map((u) => (
-                          <tr key={u._id || u.userId}>
-                            <td>{u.name}</td>
-                            <td>{u.email}</td>
-                            <td>{u.role}</td>
-                            <td>
-                              <button
-                                className="sa-btn"
-                                type="button"
-                                onClick={() => approveSeller(u.userId || u._id).then(loadAccounts)}
-                              >
-                                Approve
-                              </button>
-                            </td>
-                          </tr>
-                        ))}
-                      </tbody>
-                    </table>
-                  </div>
-                </div>
-              )}
-
-              {filteredAccounts.length === 0 && !loadingAccounts ? (
-                <p className="sa-empty">No accounts found for this filter.</p>
-              ) : (
-                <div className="sa-table-wrap">
-                  <table className="sa-table">
-                    <thead>
-                      <tr>
-                        <th>ID</th>
-                        <th>Name</th>
-                        <th>Email</th>
-                        <th>Role</th>
-                        <th>Status</th>
-                        <th>Actions</th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {filteredAccounts.map((u) => (
-                        <tr key={u._id || u.userId}>
-                          <td>{u.userId ?? '—'}</td>
-                          <td>{u.name}</td>
-                          <td>{u.email}</td>
-                          <td>{u.role}</td>
-                          <td>
-                            <span className={`sa-badge sa-badge-${(u.status || 'active').toLowerCase()}`}>
-                              {u.status || 'active'}
-                            </span>
-                          </td>
-                          <td>
-                            <div className="sa-row-actions">
-                              <RowActionsMenu
-                                label={`Actions for ${u.name || u.email}`}
-                                items={[
-                                  { label: 'View details', icon: Eye, onClick: () => openDetail(u) },
-                                  { label: 'Edit account', icon: Pencil, onClick: () => openEditUser(u) },
-                                  {
-                                    label: u.status === 'suspended' ? 'Activate account' : 'Suspend account',
-                                    icon: u.status === 'suspended' ? ShieldCheck : ShieldOff,
-                                    hidden: u.role === 'superadmin',
-                                    separatorBefore: true,
-                                    onClick: () => handleToggleStatus(u),
-                                  },
-                                  {
-                                    label: 'Delete user',
-                                    icon: Trash2,
-                                    danger: true,
-                                    hidden: u.userId === user.userId,
-                                    separatorBefore: u.role === 'superadmin',
-                                    onClick: () => setDeleteTarget(u),
-                                  },
-                                ]}
-                              />
-                            </div>
-                          </td>
-                        </tr>
-                      ))}
-                    </tbody>
-                  </table>
-                </div>
-              )}
-            </section>
+              </tbody>
+            </table>
           </div>
-        );
+        )}
+      </section>
 
-      case 'Credentials':
-        return <CredentialsPanel />;
+      {dialogs}
+    </>
+  );
+}
 
-      case 'AuditLogs':
-        return (
-          <div className="sa-tab">
-            <AuditLogPanel
-              logs={auditLogs}
-              loading={auditLoading}
-              page={auditPage}
-              totalPages={auditTotalPages}
-              actionFilter={auditActionFilter}
-              onFilterChange={(val) => {
-                setAuditActionFilter(val);
-                loadAuditLogs(1, false, val);
-              }}
-              onRefresh={() => loadAuditLogs(1, false)}
-              onLoadMore={() => loadAuditLogs(auditPage + 1, true)}
-            />
-          </div>
-        );
+function AccountForm({ user, run, onClose }) {
+  const [form, setForm] = useState({
+    name: user?.name || '',
+    email: user?.email || '',
+    password: '',
+    role: user?.role || 'seller',
+    status: user?.status || 'active',
+  });
+  const [error, setError] = useState('');
+  const [busy, setBusy] = useState(false);
+  const set = (key) => (e) => setForm((f) => ({ ...f, [key]: e.target.value }));
 
-      case 'Analytics':
-        return (
-          <div className="sa-tab">
-            <BusinessAnalytics />
-          </div>
-        );
-
-      case 'Settings':
-        return (
-          <div className="sa-tab">
-            <SettingsPanel user={user} />
-          </div>
-        );
-
-      default:
-        return null;
+  async function submit(e) {
+    e.preventDefault();
+    if (!form.name.trim() || !form.email.trim()) {
+      setError('Enter a name and an email.');
+      return;
     }
+    if ((!user || form.password) && form.password.length < 6) {
+      setError('Use a password of at least 6 characters.');
+      return;
+    }
+    setBusy(true);
+    const payload = { name: form.name.trim(), email: form.email.trim(), role: form.role, status: form.status };
+    if (form.password) payload.password = form.password;
+    const ok = await run(
+      () => (user ? updateUserAccount(idOf(user), payload) : createUserAccount(payload)),
+      user ? 'Account saved.' : `Account for ${payload.email} created.`,
+      'Could not save this account.',
+    );
+    if (ok) onClose();
+    else setBusy(false);
   }
 
   return (
-    <div className="sa-root">
-      <aside className={`sa-sidebar ${sidebarOpen ? 'open' : ''}`}>
-        <button
-          className="sa-sidebar-close"
-          type="button"
-          onClick={() => setSidebarOpen(false)}
-          aria-label="Close menu"
-        >
-          <X size={18} strokeWidth={2.25} />
-        </button>
-
-        <div className="sa-brand">
-          <img src={logoImg} alt="AgriFair" className="sa-brand-img" />
-          <div>
-            <div className="sa-brand-text">AgriFair</div>
-            <span className="sa-brand-sub">Super Admin</span>
+    <Modal title={user ? `Edit ${user.name || user.email}` : 'New account'} onClose={onClose}>
+      <form onSubmit={submit} noValidate>
+        <div className="modal-body">
+          <div className="form-grid-2">
+            <label className="field">
+              <span className="field-label">Name</span>
+              <input className="input" value={form.name} onChange={set('name')} autoComplete="off" />
+            </label>
+            <label className="field">
+              <span className="field-label">Email</span>
+              <input className="input" type="email" spellCheck={false} value={form.email} onChange={set('email')} autoComplete="off" />
+            </label>
+            <label className="field">
+              <span className="field-label">Role</span>
+              <select className="select" value={form.role} onChange={set('role')}>
+                <option value="seller">Seller</option>
+                <option value="buyer">Buyer</option>
+                <option value="superadmin">Super Admin</option>
+                {form.role === 'rider' && <option value="rider">Rider</option>}
+              </select>
+            </label>
+            <label className="field">
+              <span className="field-label">Status</span>
+              <select className="select" value={form.status} onChange={set('status')}>
+                <option value="active">Active</option>
+                <option value="suspended">Suspended</option>
+                {form.role === 'seller' && <option value="pending">Waiting for approval</option>}
+              </select>
+            </label>
+            <label className="field span-all">
+              <span className="field-label">{user ? 'New password' : 'Password'} {user && <span className="optional">(leave empty to keep it)</span>}</span>
+              <input className="input" type="password" autoComplete="new-password" value={form.password} onChange={set('password')} />
+            </label>
           </div>
+          {!user && <p className="field-hint">Accounts you create here are treated as verified. Riders are added by their seller.</p>}
+          {error && <p className="alert alert-danger" role="alert">{error}</p>}
         </div>
-
-        <nav className="sa-nav">
-          {TABS.map((tab) => (
-            <button
-              key={tab.id}
-              type="button"
-              className={`sa-nav-item ${activeTab === tab.id ? 'active' : ''}`}
-              onClick={() => {
-                setActiveTab(tab.id);
-                setSidebarOpen(false);
-              }}
-            >
-              <span className="sa-nav-icon">
-                <tab.icon size={17} strokeWidth={2.25} />
-              </span>
-              {tab.label}
-            </button>
-          ))}
-        </nav>
-
-        <div className="sa-sidebar-foot">
-          <div className="sa-user-chip">
-            <div className="sa-avatar">{initials}</div>
-            <div>
-              <div className="sa-user-email">{user.email || 'superadmin@agrifair.ph'}</div>
-              <div className="sa-user-role">Super Admin</div>
-            </div>
-          </div>
-          <button className="sa-logout-btn" type="button" onClick={() => setShowLogout(true)}>
-            Log out
-          </button>
+        <div className="modal-actions">
+          <button type="button" className="btn btn-secondary" onClick={onClose}>Cancel</button>
+          <button type="submit" className="btn btn-primary" disabled={busy}>{busy ? 'Saving…' : user ? 'Save' : 'Create account'}</button>
         </div>
-      </aside>
-
-      {sidebarOpen && <div className="sa-overlay" onClick={() => setSidebarOpen(false)} />}
-
-      <main className="sa-main">
-        <header className="sa-topbar">
-          <div style={{ display: 'flex', alignItems: 'center' }}>
-            <button
-              className="sa-menu-btn"
-              type="button"
-              onClick={() => setSidebarOpen(true)}
-              aria-label="Open menu"
-            >
-              <Menu size={18} strokeWidth={2.25} />
-            </button>
-            <div>
-              <p className="sa-eyebrow">Platform control</p>
-              <p className="sa-greeting">Hello, {displayName}</p>
-              <h1 className="sa-topbar-title">Welcome to your dashboard.</h1>
-            </div>
-          </div>
-          <div className="sa-topbar-meta">
-            <CalendarDays size={17} strokeWidth={2.2} />
-            <div>
-              <span className="sa-topbar-meta-day">{todayWeekday}</span>
-              <span className="sa-topbar-meta-date">{todayDate}</span>
-            </div>
-          </div>
-        </header>
-        <div className="sa-body">{renderContent()}</div>
-      </main>
-
-      {showLogout && (
-        <div className="sa-modal-overlay">
-          <div className="sa-modal">
-            <h3>Log out?</h3>
-            <p>Leave the Super Admin dashboard?</p>
-            <div className="sa-modal-actions">
-              <button className="sa-btn-ghost" type="button" onClick={() => setShowLogout(false)}>
-                Cancel
-              </button>
-              <button className="sa-btn-danger" type="button" onClick={handleLogout}>
-                Yes, log out
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
-
-      {showUserModal && (
-        <div className="sa-modal-overlay">
-          <div className="sa-modal sa-modal-md">
-            <h3>{editingUser ? 'Edit account' : 'New account'}</h3>
-            {userFormError && <p className="sa-form-error">{userFormError}</p>}
-            <form onSubmit={handleUserFormSubmit}>
-              <div className="sa-form-grid">
-                <div className="sa-form-field">
-                  <label>Name *</label>
-                  <input
-                    type="text"
-                    className="sa-input"
-                    value={userForm.name}
-                    onChange={(e) => setUserForm((f) => ({ ...f, name: e.target.value }))}
-                    required
-                  />
-                </div>
-                <div className="sa-form-field">
-                  <label>Email *</label>
-                  <input
-                    type="email"
-                    className="sa-input"
-                    value={userForm.email}
-                    onChange={(e) => setUserForm((f) => ({ ...f, email: e.target.value }))}
-                    required
-                  />
-                </div>
-                <div className="sa-form-field">
-                  <label>{editingUser ? 'New password (optional)' : 'Password *'}</label>
-                  <input
-                    type="password"
-                    className="sa-input"
-                    value={userForm.password}
-                    onChange={(e) => setUserForm((f) => ({ ...f, password: e.target.value }))}
-                    placeholder={editingUser ? 'Leave blank to keep current' : ''}
-                  />
-                </div>
-                <div className="sa-form-field">
-                  <label>Role</label>
-                  <select
-                    className="sa-select"
-                    value={userForm.role}
-                    onChange={(e) => setUserForm((f) => ({ ...f, role: e.target.value }))}
-                  >
-                    <option value="seller">Seller</option>
-                    <option value="buyer">Buyer</option>
-                    <option value="superadmin">Super admin</option>
-                  </select>
-                </div>
-                <div className="sa-form-field">
-                  <label>Status</label>
-                  <select
-                    className="sa-select"
-                    value={userForm.status}
-                    onChange={(e) => setUserForm((f) => ({ ...f, status: e.target.value }))}
-                  >
-                    <option value="active">Active</option>
-                    <option value="pending">Pending</option>
-                    <option value="suspended">Suspended</option>
-                  </select>
-                </div>
-              </div>
-              <div className="sa-modal-actions">
-                <button type="button" className="sa-btn-ghost" onClick={closeUserModal}>
-                  Cancel
-                </button>
-                <button type="submit" className="sa-btn" disabled={savingUser}>
-                  {savingUser ? 'Saving…' : editingUser ? 'Save changes' : 'Create account'}
-                </button>
-              </div>
-            </form>
-          </div>
-        </div>
-      )}
-
-      {deleteTarget && (
-        <div className="sa-modal-overlay">
-          <div className="sa-modal">
-            <h3>Delete account?</h3>
-            <p>
-              This permanently removes <strong>{deleteTarget.name || deleteTarget.email}</strong> from AgriFair.
-              This cannot be undone.
-            </p>
-            <div className="sa-modal-actions">
-              <button className="sa-btn-ghost" type="button" onClick={() => setDeleteTarget(null)}>
-                Cancel
-              </button>
-              <button className="sa-btn-danger" type="button" onClick={handleConfirmDelete}>
-                Yes, delete
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
-
-      {detailUser && (
-        <UserDetailView
-          user={detailUser}
-          analytics={detailAnalytics}
-          loading={detailLoading}
-          onClose={closeDetail}
-          onEdit={(u) => {
-            closeDetail();
-            openEditUser(u);
-          }}
-          onToggleStatus={handleToggleStatus}
-        />
-      )}
-    </div>
+      </form>
+    </Modal>
   );
 }

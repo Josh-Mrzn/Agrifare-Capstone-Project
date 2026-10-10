@@ -1,9 +1,9 @@
-import React, { useState } from 'react';
-import { useNavigate } from 'react-router-dom';
-import { Menu, CalendarDays } from 'lucide-react';
-import './AdminPage.css';
-
-import AdminSidebar from './components/AdminSidebar';
+import React from 'react';
+import { useNavigate, useSearchParams } from 'react-router-dom';
+import {
+  LayoutGrid, Package, Boxes, ShoppingCart, Truck, BarChart3, MessageSquare, UserCog,
+} from 'lucide-react';
+import PortalShell from '../../components/PortalShell';
 import NotificationBell from './components/NotificationBell';
 import DashboardTab from './tabs/DashboardTab';
 import ProductListTab from './tabs/ProductListTab';
@@ -14,108 +14,64 @@ import MessagesTab from './tabs/MessagesTab';
 import DeliveryPeopleTab from './tabs/DeliveryPeopleTab';
 import AccountInfoTab from './tabs/AccountInfoTab';
 import { clearSession, getSessionUser } from '../../utils/auth';
+import './AdminPage.css';
 
-const TABS = ['Dashboard', 'Products', 'Inventory', 'Orders', 'Delivery', 'Analytics', 'Messages', 'Account Info'];
+const SECTIONS = [
+  { id: 'dashboard', label: 'Dashboard', icon: LayoutGrid },
+  { id: 'orders', label: 'Orders', icon: ShoppingCart },
+  { id: 'products', label: 'Products', icon: Package },
+  { id: 'inventory', label: 'Inventory', icon: Boxes },
+  { id: 'delivery', label: 'Delivery', icon: Truck },
+  { id: 'messages', label: 'Messages', icon: MessageSquare },
+  { id: 'analytics', label: 'Analytics', icon: BarChart3 },
+  { id: 'account', label: 'Account', icon: UserCog },
+];
 
-export default function AdminPage({ onLogout }) {
+/** Older notification links use the tab's label ("Orders", "Account Info"). */
+function sectionFrom(param) {
+  const key = String(param || '').toLowerCase().replace(/\s.*/, '');
+  return SECTIONS.some((s) => s.id === key) ? key : 'dashboard';
+}
+
+export default function AdminPage() {
   const navigate = useNavigate();
-  // Read the session during initialisation - syncing it in an effect caused a
-  // cascading render and a frame of empty user data on every mount.
-  const [user] = useState(() => getSessionUser() || { email: '', role: 'seller', name: '' });
-  const [activeTab, setActiveTab] = useState('Dashboard');
-  const [sidebarOpen, setSidebarOpen] = useState(false);
-  const [showLogout, setShowLogout] = useState(false);
+  const [params, setParams] = useSearchParams();
+  const user = getSessionUser() || {};
+  const active = sectionFrom(params.get('tab'));
 
-  const handleLogout = () => {
+  // The section lives in the URL, so a refresh, the Back button and links in
+  // notifications all land on the right one.
+  const go = (id) => setParams(id === 'dashboard' ? {} : { tab: id });
+
+  const signOut = () => {
     clearSession();
-    if (onLogout) onLogout();
     navigate('/login');
   };
 
-  const displayName = user.name || user.email?.split('@')[0] || 'Seller';
-  const now = new Date();
-  const todayWeekday = now.toLocaleDateString('en-PH', { weekday: 'long' });
-  const todayDate = now.toLocaleDateString('en-PH', { month: 'long', day: 'numeric', year: 'numeric' });
-
-  const renderTab = () => {
-    switch (activeTab) {
-      case 'Dashboard':
-        return <DashboardTab onNavigate={setActiveTab} />;
-      case 'Products':
-        return <ProductListTab />;
-      case 'Inventory':
-        return <InventoryTab />;
-      case 'Orders':
-        return <OrdersTab />;
-      case 'Delivery':
-        return <DeliveryPeopleTab />;
-      case 'Analytics':
-        return <ReportsTab />;
-      case 'Messages':
-        return <MessagesTab user={user} />;
-      case 'Account Info':
-        return <AccountInfoTab />;
-      default:
-        return null;
-    }
-  };
+  const content = {
+    dashboard: <DashboardTab onNavigate={go} />,
+    orders: <OrdersTab />,
+    products: <ProductListTab />,
+    inventory: <InventoryTab />,
+    delivery: <DeliveryPeopleTab />,
+    messages: <MessagesTab user={user} />,
+    analytics: <ReportsTab />,
+    account: <AccountInfoTab />,
+  }[active];
 
   return (
-    <div className="ap-root">
-      <AdminSidebar
-        user={user}
-        tabs={TABS}
-        activeTab={activeTab}
-        setActiveTab={setActiveTab}
-        sidebarOpen={sidebarOpen}
-        setSidebarOpen={setSidebarOpen}
-        onLogoutClick={() => setShowLogout(true)}
-      />
-
-      <main className="ap-main">
-        <header className="ap-topbar">
-          <div className="ap-topbar-left">
-            <button
-              className="ap-menu-btn"
-              type="button"
-              aria-label="Open menu"
-              onClick={() => setSidebarOpen(true)}
-            >
-              <Menu size={18} strokeWidth={2.25} />
-            </button>
-            <div>
-              <p className="ap-eyebrow">Seller workspace</p>
-              <p className="ap-greeting">Hello, {displayName}</p>
-              <h1 className="ap-topbar-title">{activeTab}</h1>
-            </div>
-          </div>
-
-          <div className="ap-topbar-right">
-            <div className="ap-topbar-meta">
-              <CalendarDays size={17} strokeWidth={2.2} />
-              <div>
-                <span className="ap-topbar-meta-day">{todayWeekday}</span>
-                <span className="ap-topbar-meta-date">{todayDate}</span>
-              </div>
-            </div>
-            <NotificationBell onNavigate={setActiveTab} />
-          </div>
-        </header>
-        <div className="ap-body">{renderTab()}</div>
-      </main>
-
-      {showLogout && (
-        <div className="ap-modal-overlay">
-          <div className="ap-modal">
-            <h3>Log out?</h3>
-            <p>Are you sure you want to sign out of your AgriFair seller portal?</p>
-            <div className="ap-modal-actions">
-              <button className="ap-modal-cancel" type="button" onClick={() => setShowLogout(false)}>Cancel</button>
-              <button className="ap-modal-confirm" type="button" onClick={handleLogout}>Yes, Log Out</button>
-            </div>
-          </div>
-        </div>
-      )}
-    </div>
+    <PortalShell
+      portalName="Seller portal"
+      roleLabel="Seller"
+      workspaceLabel="Seller workspace"
+      sections={SECTIONS}
+      active={active}
+      onSelect={go}
+      user={user}
+      onSignOut={signOut}
+      headerActions={<NotificationBell onNavigate={go} />}
+    >
+      {content}
+    </PortalShell>
   );
 }

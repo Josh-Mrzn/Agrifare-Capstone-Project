@@ -1,364 +1,301 @@
-import { Package, AlertTriangle, Ban, Wallet, History, PlusCircle, SlidersHorizontal, Boxes } from 'lucide-react';
-import React, { useEffect, useState } from 'react';
+import React, { useCallback, useEffect, useState } from 'react';
+import { AlertTriangle, Boxes, PackageX, Wallet } from 'lucide-react';
 import { fetchInventorySummary, restockProduct, adjustStock, fetchStockMovements } from '../../../services/clientApi';
+import { getErrorMessage } from '../../../services/authApi';
+import Modal from '../../../components/Modal';
+import ActionsMenu from '../../../components/ActionsMenu';
+import { number, wholePeso, formatDate, formatDateTime } from '../../../utils/format';
 
-function stockStatus(p) {
-  if (p.stock <= 0) return { label: 'Out of Stock', cls: 'out-of-stock' };
-  if (p.stock <= p.lowStockThreshold) return { label: 'Low Stock', cls: 'pending' };
-  return { label: 'In Stock', cls: 'active' };
+function stockState(p) {
+  if (p.stock <= 0) return { label: 'Sold out', tone: 'danger' };
+  if (p.stock <= p.lowStockThreshold) return { label: 'Low', tone: 'warning' };
+  return { label: 'OK', tone: 'success' };
 }
 
 const MOVEMENT_LABEL = {
-  RESTOCK: 'Restock',
-  SALE: 'Sale',
-  RETURN: 'Return',
-  ADJUSTMENT: 'Adjustment',
-  DAMAGE: 'Damage / Loss',
+  RESTOCK: 'Added',
+  SALE: 'Sold',
+  RETURN: 'Returned',
+  ADJUSTMENT: 'Count corrected',
+  DAMAGE: 'Damaged or spoiled',
 };
 
 export default function InventoryTab() {
   const [summary, setSummary] = useState(null);
-  const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
+  const [dialog, setDialog] = useState(null); // { kind: 'add' | 'correct' | 'history', product }
 
-  const [restockTarget, setRestockTarget] = useState(null);
-  const [restockQty, setRestockQty] = useState('');
-  const [restockNote, setRestockNote] = useState('');
-  const [saving, setSaving] = useState(false);
-  const [actionError, setActionError] = useState('');
-
-  const [adjustTarget, setAdjustTarget] = useState(null);
-  const [adjustQty, setAdjustQty] = useState('');
-  const [adjustType, setAdjustType] = useState('ADJUSTMENT');
-  const [adjustNote, setAdjustNote] = useState('');
-
-  const [historyTarget, setHistoryTarget] = useState(null);
-  const [movements, setMovements] = useState([]);
-  const [movementsLoading, setMovementsLoading] = useState(false);
-
-  const load = async () => {
-    setLoading(true);
-    setError('');
+  const load = useCallback(async () => {
     try {
       const res = await fetchInventorySummary();
       setSummary(res.data);
+      setError('');
     } catch (err) {
-      setError(err.response?.data?.message || 'Could not load inventory.');
-      setSummary(null);
-    } finally {
-      setLoading(false);
+      setError(getErrorMessage(err, 'Could not load your inventory.'));
+      setSummary({ products: [], totalStock: 0, lowStockCount: 0, outOfStockCount: 0, stockValue: 0 });
     }
-  };
-
-  useEffect(() => {
-    load();
   }, []);
 
-  async function handleRestockSubmit(e) {
+  useEffect(() => {
+    // load() sets state only after its await, which this rule cannot see.
+    // eslint-disable-next-line react-hooks/set-state-in-effect
+    load();
+  }, [load]);
+
+  if (!summary) {
+    return (
+      <>
+        <div className="skeleton" style={{ height: 96 }} />
+        <div className="panel"><div className="skeleton-rows"><div className="skeleton" /><div className="skeleton" /></div></div>
+      </>
+    );
+  }
+
+  const close = () => setDialog(null);
+  const saved = async () => {
+    setDialog(null);
+    await load();
+  };
+
+  return (
+    <>
+      {error && <p className="alert alert-danger" role="alert">{error}</p>}
+
+      <div className="stats">
+        <div className="stat">
+          <span className="stat-icon"><Boxes size={19} aria-hidden="true" /></span>
+          <span className="stat-label">Rice in stock</span>
+          <span className="stat-value">{number(summary.totalStock)}<small>kg</small></span>
+          <span className="stat-note">Across {summary.products.length} product{summary.products.length === 1 ? '' : 's'}</span>
+        </div>
+        <div className="stat stat--gold">
+          <span className="stat-icon"><AlertTriangle size={19} aria-hidden="true" /></span>
+          <span className="stat-label">Running low</span>
+          <span className="stat-value">{number(summary.lowStockCount)}</span>
+          <span className="stat-note">At or below your warning level</span>
+        </div>
+        <div className="stat">
+          <span className="stat-icon"><PackageX size={19} aria-hidden="true" /></span>
+          <span className="stat-label">Sold out</span>
+          <span className="stat-value">{number(summary.outOfStockCount)}</span>
+          <span className="stat-note">Buyers cannot order these</span>
+        </div>
+        <div className="stat stat--gold">
+          <span className="stat-icon"><Wallet size={19} aria-hidden="true" /></span>
+          <span className="stat-label">Stock value</span>
+          <span className="stat-value">{wholePeso(summary.stockValue)}</span>
+          <span className="stat-note">At your list prices</span>
+        </div>
+      </div>
+
+      <section className="panel">
+        {summary.products.length === 0 ? (
+          <div className="empty">
+            <strong>No products yet</strong>
+            <p>Add a product under Products first. Its stock is managed here.</p>
+          </div>
+        ) : (
+          <div className="table-wrap">
+            <table className="table table-stack">
+              <thead>
+                <tr>
+                  <th>Product</th>
+                  <th className="is-num">In stock</th>
+                  <th className="is-num">Warn below</th>
+                  <th>Level</th>
+                  <th>Last added</th>
+                  <th className="is-actions"><span className="sr-only">Actions</span></th>
+                </tr>
+              </thead>
+              <tbody>
+                {summary.products.map((p) => {
+                  const state = stockState(p);
+                  return (
+                    <tr key={p._id}>
+                      <td className="is-primary"><strong>{p.name}</strong></td>
+                      <td data-label="In stock" className="is-num">{number(p.stock)} kg</td>
+                      <td data-label="Warn below" className="is-num muted">{number(p.lowStockThreshold)} kg</td>
+                      <td data-label="Level"><span className={`badge badge-${state.tone}`}>{state.label}</span></td>
+                      <td data-label="Last added" className="muted">{formatDate(p.lastRestockedAt, 'Never')}</td>
+                      <td className="is-actions">
+                        <span className="row-actions">
+                          <button type="button" className="btn btn-secondary btn-sm" onClick={() => setDialog({ kind: 'add', product: p })}>
+                            Add stock
+                          </button>
+                          <ActionsMenu
+                            label={`More actions for ${p.name}`}
+                            items={[
+                              { label: 'Correct the count', onClick: () => setDialog({ kind: 'correct', product: p }) },
+                              { label: 'Stock history', onClick: () => setDialog({ kind: 'history', product: p }) },
+                            ]}
+                          />
+                        </span>
+                      </td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+          </div>
+        )}
+      </section>
+
+      {dialog?.kind === 'add' && <AddStock product={dialog.product} onClose={close} onSaved={saved} />}
+      {dialog?.kind === 'correct' && <CorrectStock product={dialog.product} onClose={close} onSaved={saved} />}
+      {dialog?.kind === 'history' && <StockHistory product={dialog.product} onClose={close} />}
+    </>
+  );
+}
+
+function AddStock({ product, onClose, onSaved }) {
+  const [qty, setQty] = useState('');
+  const [note, setNote] = useState('');
+  const [saving, setSaving] = useState(false);
+  const [error, setError] = useState('');
+
+  async function submit(e) {
     e.preventDefault();
-    setActionError('');
-    if (!restockQty || Number(restockQty) < 1) {
-      setActionError('Enter a quantity of at least 1 kg.');
+    if (!(Number(qty) >= 1)) {
+      setError('Enter at least 1 kg.');
       return;
     }
     setSaving(true);
     try {
-      await restockProduct(restockTarget._id, Number(restockQty), restockNote);
-      setRestockTarget(null);
-      setRestockQty('');
-      setRestockNote('');
-      await load();
+      await restockProduct(product._id, Number(qty), note);
+      await onSaved();
     } catch (err) {
-      setActionError(err.response?.data?.message || 'Could not restock this product.');
-    } finally {
+      setError(getErrorMessage(err, 'Could not add the stock.'));
       setSaving(false);
-    }
-  }
-
-  async function handleAdjustSubmit(e) {
-    e.preventDefault();
-    setActionError('');
-    if (!adjustQty || Number(adjustQty) === 0) {
-      setActionError('Enter a non-zero quantity (use negative for loss/damage).');
-      return;
-    }
-    setSaving(true);
-    try {
-      await adjustStock(adjustTarget._id, Number(adjustQty), adjustType, adjustNote);
-      setAdjustTarget(null);
-      setAdjustQty('');
-      setAdjustNote('');
-      await load();
-    } catch (err) {
-      setActionError(err.response?.data?.message || 'Could not adjust stock for this product.');
-    } finally {
-      setSaving(false);
-    }
-  }
-
-  async function openHistory(p) {
-    setHistoryTarget(p);
-    setMovementsLoading(true);
-    try {
-      const res = await fetchStockMovements(p._id);
-      setMovements(res.data || []);
-    } catch {
-      setMovements([]);
-    } finally {
-      setMovementsLoading(false);
     }
   }
 
   return (
-    <div className="ap-tab-content">
-      {error && <p className="ap-empty-state">{error}</p>}
-
-      {loading && (
-        <div className="ap-skeleton-grid">
-          {[0, 1, 2, 3].map((i) => <div key={i} className="ap-skeleton" style={{ height: 118 }} />)}
+    <Modal title={`Add stock: ${product.name}`} onClose={onClose}>
+      <form onSubmit={submit} noValidate>
+        <div className="modal-body">
+          <p>Record rice you received: a harvest, a delivery from a supplier, or a return.</p>
+          <label className="field">
+            <span className="field-label">Kilos to add</span>
+            <input className="input" type="number" inputMode="numeric" min="1" value={qty} onChange={(e) => setQty(e.target.value)} />
+            <span className="field-hint num">
+              {Number(qty) > 0
+                ? `${number(product.stock)} kg now, ${number(Number(product.stock) + Number(qty))} kg after`
+                : `${number(product.stock)} kg in stock now`}
+            </span>
+          </label>
+          <label className="field">
+            <span className="field-label">Note <span className="optional">(optional)</span></span>
+            <input className="input" value={note} onChange={(e) => setNote(e.target.value)} placeholder="Harvest from the north field…" autoComplete="off" />
+          </label>
+          {error && <p className="alert alert-danger" role="alert">{error}</p>}
         </div>
-      )}
-
-      {!loading && summary && (
-        <>
-          <div className="ap-stats-grid">
-            <div className="ap-stat-card ap-stat--green">
-              <span className="ap-stat-icon"><Package size={20} strokeWidth={2.2} /></span>
-              <span className="ap-stat-label">Total stock</span>
-              <span className="ap-stat-value">
-                {summary.totalStock.toLocaleString()}<small className="ap-stat-unit">kg</small>
-              </span>
-              <span className="ap-stat-foot">Across {summary.products.length} product{summary.products.length === 1 ? '' : 's'}</span>
-            </div>
-
-            <div className="ap-stat-card ap-stat--gold">
-              <span className="ap-stat-icon"><AlertTriangle size={20} strokeWidth={2.2} /></span>
-              <span className="ap-stat-label">Running low</span>
-              <span className="ap-stat-value">{summary.lowStockCount}</span>
-              <span className="ap-stat-foot">
-                {summary.lowStockCount ? 'At or below their threshold' : 'Nothing needs restocking'}
-              </span>
-            </div>
-
-            <div className="ap-stat-card ap-stat--plum">
-              <span className="ap-stat-icon"><Ban size={20} strokeWidth={2.2} /></span>
-              <span className="ap-stat-label">Out of stock</span>
-              <span className="ap-stat-value">{summary.outOfStockCount}</span>
-              <span className="ap-stat-foot">
-                {summary.outOfStockCount ? 'Cannot be ordered right now' : 'Everything is orderable'}
-              </span>
-            </div>
-
-            <div className="ap-stat-card ap-stat--teal">
-              <span className="ap-stat-icon"><Wallet size={20} strokeWidth={2.2} /></span>
-              <span className="ap-stat-label">Stock value</span>
-              <span className="ap-stat-value">
-                <small>₱</small>{summary.stockValue.toLocaleString()}
-              </span>
-              <span className="ap-stat-foot">What your shelves are worth at list price</span>
-            </div>
-          </div>
-
-          <div className="ap-panel">
-            <div className="ap-panel-header">
-              <div>
-                <span className="ap-panel-tag">Stock levels</span>
-                <h2>Every product you sell</h2>
-              </div>
-            </div>
-            {summary.products.length === 0 ? (
-              <div className="ap-empty-state">
-                <Boxes size={28} strokeWidth={1.6} />
-                <p>No products yet. Add a product first, then you can manage its stock here.</p>
-              </div>
-            ) : (
-              <div className="ap-table-wrap">
-                <table className="ap-table">
-                  <thead>
-                    <tr>
-                      <th>Product</th>
-                      <th>Stock on hand</th>
-                      <th className="ap-th-num" title="You get a low-stock warning at or below this level">
-                        Warn at
-                      </th>
-                      <th>Status</th>
-                      <th>Last restocked</th>
-                      <th className="ap-th-actions">Actions</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {summary.products.map((p) => {
-                      const st = stockStatus(p);
-                      const pct = Math.min(100, p.lowStockThreshold > 0 ? (p.stock / (p.lowStockThreshold * 3)) * 100 : 100);
-                      return (
-                        <tr key={p._id}>
-                          <td className="ap-td-name">{p.name}</td>
-                          <td>
-                            <div className="ap-stock-cell">
-                              <span className="ap-stock-value">{Number(p.stock).toLocaleString()} kg</span>
-                              <div className="ap-stock-bar-track">
-                                <div className={`ap-stock-bar-fill ap-stock-bar-${st.cls}`} style={{ width: `${Math.max(3, pct)}%` }} />
-                              </div>
-                            </div>
-                          </td>
-                          <td className="ap-td-num ap-td-soft">{p.lowStockThreshold} kg</td>
-                          <td><span className={`ap-badge ap-badge-${st.cls}`}>{st.label}</span></td>
-                          <td className="ap-td-soft">
-                            {p.lastRestockedAt ? new Date(p.lastRestockedAt).toLocaleDateString('en-PH', { month: 'short', day: 'numeric', year: 'numeric' }) : 'Never'}
-                          </td>
-                          <td>
-                            <div className="ap-inv-actions">
-                              <button
-                                className="ap-btn-ghost ap-btn-sm"
-                                type="button"
-                                title="Record new stock you received, e.g. a harvest or delivery"
-                                onClick={() => { setRestockTarget(p); setActionError(''); }}
-                              >
-                                <PlusCircle size={14} strokeWidth={2.3} />
-                                Add stock
-                              </button>
-                              <button
-                                className="ap-btn-ghost ap-btn-sm"
-                                type="button"
-                                title="Correct the count, or record damage, loss, or a return"
-                                onClick={() => { setAdjustTarget(p); setActionError(''); }}
-                              >
-                                <SlidersHorizontal size={14} strokeWidth={2.3} />
-                                Correct
-                              </button>
-                              <button
-                                className="ap-btn-ghost ap-btn-sm"
-                                type="button"
-                                title="See every stock change for this product"
-                                onClick={() => openHistory(p)}
-                              >
-                                <History size={14} strokeWidth={2.3} />
-                                History
-                              </button>
-                            </div>
-                          </td>
-                        </tr>
-                      );
-                    })}
-                  </tbody>
-                </table>
-              </div>
-            )}
-          </div>
-        </>
-      )}
-
-      {restockTarget && (
-        <div className="ap-modal-overlay">
-          <div className="ap-modal ap-modal-md">
-            <h3>Add stock</h3>
-            <p className="ap-modal-sub">
-              Record new stock you received for <strong>{restockTarget.name}</strong> — a harvest,
-              a delivery, or anything that increases what you have on hand.
-            </p>
-            {actionError && <p className="ap-form-error">{actionError}</p>}
-            <form onSubmit={handleRestockSubmit}>
-              <div className="ap-form-field" style={{ marginBottom: '0.9rem' }}>
-                <label>Quantity to add (kg)</label>
-                <input type="number" min="1" value={restockQty} onChange={(e) => setRestockQty(e.target.value)} autoFocus />
-                {Number(restockQty) > 0 && (
-                  <span className="ap-field-hint">
-                    {Number(restockTarget.stock).toLocaleString()} kg → <strong>{(Number(restockTarget.stock) + Number(restockQty)).toLocaleString()} kg</strong>
-                  </span>
-                )}
-              </div>
-              <div className="ap-form-field" style={{ marginBottom: '0.9rem' }}>
-                <label>Note (optional)</label>
-                <input type="text" value={restockNote} onChange={(e) => setRestockNote(e.target.value)} placeholder="e.g. Weekly harvest" />
-              </div>
-              <div className="ap-modal-actions">
-                <button type="button" className="ap-modal-cancel" onClick={() => setRestockTarget(null)}>Cancel</button>
-                <button type="submit" className="ap-modal-confirm" disabled={saving}>{saving ? 'Saving…' : 'Add stock'}</button>
-              </div>
-            </form>
-          </div>
+        <div className="modal-actions">
+          <button type="button" className="btn btn-secondary" onClick={onClose}>Cancel</button>
+          <button type="submit" className="btn btn-primary" disabled={saving}>{saving ? 'Saving…' : 'Add stock'}</button>
         </div>
-      )}
+      </form>
+    </Modal>
+  );
+}
 
-      {adjustTarget && (
-        <div className="ap-modal-overlay">
-          <div className="ap-modal ap-modal-md">
-            <h3>Correct stock</h3>
-            <p className="ap-modal-sub">
-              Use this when the real count of <strong>{adjustTarget.name}</strong> does not match
-              the system — spoilage, loss, or a miscount. This is not for sales.
-            </p>
-            {actionError && <p className="ap-form-error">{actionError}</p>}
-            <form onSubmit={handleAdjustSubmit}>
-              <div className="ap-form-field" style={{ marginBottom: '0.9rem' }}>
-                <label>Change in kilos</label>
-                <input
-                  type="number"
-                  value={adjustQty}
-                  onChange={(e) => setAdjustQty(e.target.value)}
-                  placeholder="e.g. -5"
-                  autoFocus
-                />
-                <span className="ap-field-hint">
-                  {Number(adjustQty)
-                    ? <>{Number(adjustTarget.stock).toLocaleString()} kg → <strong>{(Number(adjustTarget.stock) + Number(adjustQty)).toLocaleString()} kg</strong></>
-                    : 'Use a negative number to remove stock, positive to add it back.'}
-                </span>
-              </div>
-              <div className="ap-form-field" style={{ marginBottom: '0.9rem' }}>
-                <label>Reason</label>
-                <select value={adjustType} onChange={(e) => setAdjustType(e.target.value)}>
-                  <option value="ADJUSTMENT">Miscount — correcting the record</option>
-                  <option value="DAMAGE">Damaged or spoiled</option>
-                </select>
-              </div>
-              <div className="ap-form-field" style={{ marginBottom: '0.9rem' }}>
-                <label>Note (optional)</label>
-                <input type="text" value={adjustNote} onChange={(e) => setAdjustNote(e.target.value)} />
-              </div>
-              <div className="ap-modal-actions">
-                <button type="button" className="ap-modal-cancel" onClick={() => setAdjustTarget(null)}>Cancel</button>
-                <button type="submit" className="ap-modal-confirm" disabled={saving}>{saving ? 'Saving…' : 'Save correction'}</button>
-              </div>
-            </form>
-          </div>
-        </div>
-      )}
+function CorrectStock({ product, onClose, onSaved }) {
+  const [qty, setQty] = useState('');
+  const [type, setType] = useState('ADJUSTMENT');
+  const [note, setNote] = useState('');
+  const [saving, setSaving] = useState(false);
+  const [error, setError] = useState('');
 
-      {historyTarget && (
-        <div className="ap-modal-overlay">
-          <div className="ap-modal ap-modal-lg">
-            <h3>Stock History — {historyTarget.name}</h3>
-            {movementsLoading && <p className="ap-empty-state">Loading…</p>}
-            {!movementsLoading && movements.length === 0 && <p className="ap-empty-state">No stock movements recorded yet.</p>}
-            {!movementsLoading && movements.length > 0 && (
-              <div className="ap-table-wrap">
-                <table className="ap-table">
-                  <thead>
-                    <tr><th>Date</th><th>Type</th><th>Change</th><th>Resulting Stock</th><th>Note</th></tr>
-                  </thead>
-                  <tbody>
-                    {movements.map((m) => (
-                      <tr key={m._id}>
-                        <td>{new Date(m.createdAt).toLocaleString()}</td>
-                        <td>{MOVEMENT_LABEL[m.type] || m.type}</td>
-                        <td style={{ color: m.quantity < 0 ? 'var(--error)' : 'var(--green-700)', fontWeight: 700 }}>
-                          {m.quantity > 0 ? `+${m.quantity}` : m.quantity} kg
-                        </td>
-                        <td>{m.resultingStock} kg</td>
-                        <td>{m.note || '—'}</td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-              </div>
-            )}
-            <div className="ap-modal-actions">
-              <button className="ap-modal-cancel" type="button" onClick={() => setHistoryTarget(null)}>Close</button>
-            </div>
+  async function submit(e) {
+    e.preventDefault();
+    if (!Number(qty)) {
+      setError('Enter how many kilos to add or remove, for example -5.');
+      return;
+    }
+    setSaving(true);
+    try {
+      await adjustStock(product._id, Number(qty), type, note);
+      await onSaved();
+    } catch (err) {
+      setError(getErrorMessage(err, 'Could not correct the stock.'));
+      setSaving(false);
+    }
+  }
+
+  return (
+    <Modal title={`Correct stock: ${product.name}`} onClose={onClose}>
+      <form onSubmit={submit} noValidate>
+        <div className="modal-body">
+          <p>For when the real count differs from AgriFair: spoilage, loss, or a miscount. Sales are recorded automatically.</p>
+          <div className="form-grid-2">
+            <label className="field">
+              <span className="field-label">Change in kilos</span>
+              <input className="input" type="number" inputMode="numeric" value={qty} onChange={(e) => setQty(e.target.value)} placeholder="-5" />
+              <span className="field-hint num">
+                {Number(qty)
+                  ? `${number(product.stock)} kg now, ${number(Number(product.stock) + Number(qty))} kg after`
+                  : 'Negative removes stock.'}
+              </span>
+            </label>
+            <label className="field">
+              <span className="field-label">Reason</span>
+              <select className="select" value={type} onChange={(e) => setType(e.target.value)}>
+                <option value="ADJUSTMENT">Miscount</option>
+                <option value="DAMAGE">Damaged or spoiled</option>
+              </select>
+            </label>
           </div>
+          <label className="field">
+            <span className="field-label">Note <span className="optional">(optional)</span></span>
+            <input className="input" value={note} onChange={(e) => setNote(e.target.value)} autoComplete="off" />
+          </label>
+          {error && <p className="alert alert-danger" role="alert">{error}</p>}
         </div>
-      )}
-    </div>
+        <div className="modal-actions">
+          <button type="button" className="btn btn-secondary" onClick={onClose}>Cancel</button>
+          <button type="submit" className="btn btn-primary" disabled={saving}>{saving ? 'Saving…' : 'Save correction'}</button>
+        </div>
+      </form>
+    </Modal>
+  );
+}
+
+function StockHistory({ product, onClose }) {
+  const [movements, setMovements] = useState(null);
+
+  useEffect(() => {
+    fetchStockMovements(product._id)
+      .then((res) => setMovements(res.data || []))
+      .catch(() => setMovements([]));
+  }, [product._id]);
+
+  return (
+    <Modal title={`Stock history: ${product.name}`} size="lg" onClose={onClose}>
+      <div className="modal-body">
+        {!movements && <div className="skeleton-rows"><div className="skeleton" /><div className="skeleton" /></div>}
+        {movements?.length === 0 && <p className="muted">No stock changes recorded yet.</p>}
+        {movements?.length > 0 && (
+          <div className="table-wrap">
+            <table className="table table-stack">
+              <thead>
+                <tr><th>When</th><th>What</th><th className="is-num">Change</th><th className="is-num">After</th><th>Note</th></tr>
+              </thead>
+              <tbody>
+                {movements.map((m) => (
+                  <tr key={m._id}>
+                    <td className="is-primary">{formatDateTime(m.createdAt)}</td>
+                    <td data-label="What">{MOVEMENT_LABEL[m.type] || m.type}</td>
+                    <td data-label="Change" className={`is-num ${m.quantity < 0 ? 'text-danger' : 'text-success'}`}>
+                      {m.quantity > 0 ? '+' : ''}{number(m.quantity)} kg
+                    </td>
+                    <td data-label="After" className="is-num">{number(m.resultingStock)} kg</td>
+                    <td data-label="Note" className="muted">{m.note || ''}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        )}
+      </div>
+    </Modal>
   );
 }

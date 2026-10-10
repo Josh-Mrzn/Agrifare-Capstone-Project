@@ -1,5 +1,5 @@
-import { X, Pencil, Trash2, Copy, Play, Pause, Plus, PackageSearch, Package } from 'lucide-react';
-import React, { useEffect, useMemo, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useState } from 'react';
+import { Plus, X, ImagePlus, Wheat } from 'lucide-react';
 import {
   fetchMyProducts,
   createProduct,
@@ -7,7 +7,10 @@ import {
   removeProduct,
   duplicateProduct,
 } from '../../../services/clientApi';
-import { API_ORIGIN } from '../../../services/authApi';
+import { API_ORIGIN, getErrorMessage } from '../../../services/authApi';
+import Modal, { ConfirmDialog } from '../../../components/Modal';
+import ActionsMenu from '../../../components/ActionsMenu';
+import { peso, number } from '../../../utils/format';
 
 const RICE_VARIETIES = [
   'Jasmine',
@@ -19,7 +22,7 @@ const RICE_VARIETIES = [
   'Other',
 ];
 
-const DEFAULT_WEIGHTS = [1, 5, 10, 25, 50];
+const SACK_SIZES = [1, 5, 10, 25, 50];
 
 const EMPTY_FORM = {
   name: '',
@@ -34,532 +37,175 @@ const EMPTY_FORM = {
   newImageFiles: [],
 };
 
-function stockBadge(p) {
-  if (p.status === 'inactive') return { label: 'Inactive', cls: 'inactive' };
-  if (Number(p.stock) <= 0) return { label: 'Out of Stock', cls: 'out-of-stock' };
-  if (Number(p.stock) <= Number(p.lowStockThreshold ?? 20)) return { label: 'Low Stock', cls: 'pending' };
-  return { label: 'In Stock', cls: 'active' };
+/** What a buyer sees, in one word. */
+function availability(p) {
+  if (p.status === 'inactive') return { label: 'Hidden', tone: '' };
+  if (Number(p.stock) <= 0) return { label: 'Sold out', tone: 'danger' };
+  if (Number(p.stock) <= Number(p.lowStockThreshold ?? 20)) return { label: 'Low stock', tone: 'warning' };
+  return { label: 'For sale', tone: 'success' };
 }
 
 export default function ProductListTab() {
-  const [products, setProducts] = useState([]);
-  const [form, setForm] = useState(EMPTY_FORM);
-  const [editingId, setEditingId] = useState(null);
-  const [showForm, setShowForm] = useState(false);
-  const [loading, setLoading] = useState(true);
+  const [products, setProducts] = useState(null);
   const [error, setError] = useState('');
-  const [submitting, setSubmitting] = useState(false);
-  const [formError, setFormError] = useState('');
   const [search, setSearch] = useState('');
-  const [statusFilter, setStatusFilter] = useState('all');
+  const [filter, setFilter] = useState('all');
+  const [editing, setEditing] = useState(null); // null | 'new' | product
+  const [deleting, setDeleting] = useState(null);
+  const [busy, setBusy] = useState(false);
 
-  const loadProducts = async () => {
-    setLoading(true);
-    setError('');
+  const load = useCallback(async () => {
     try {
       const res = await fetchMyProducts();
       const list = res.data?.products || res.data || [];
       setProducts(Array.isArray(list) ? list : []);
+      setError('');
     } catch (err) {
-      setError(err.response?.data?.message || 'Could not load products from server.');
+      setError(getErrorMessage(err, 'Could not load your products.'));
       setProducts([]);
-    } finally {
-      setLoading(false);
     }
+  }, []);
+
+  useEffect(() => {
+    load();
+  }, [load]);
+
+  const shown = useMemo(() => (products || []).filter((p) => {
+    const matches = !search || p.name.toLowerCase().includes(search.trim().toLowerCase());
+    const state = availability(p).label;
+    const passes = filter === 'all'
+      || (filter === 'sale' && state === 'For sale')
+      || (filter === 'attention' && (state === 'Low stock' || state === 'Sold out'))
+      || (filter === 'hidden' && state === 'Hidden');
+    return matches && passes;
+  }), [products, search, filter]);
+
+  async function run(fn, fallback) {
+    setBusy(true);
+    try {
+      await fn();
+      await load();
+    } catch (err) {
+      setError(getErrorMessage(err, fallback));
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  const confirmDelete = async () => {
+    await run(() => removeProduct(deleting._id), 'Could not delete this product.');
+    setDeleting(null);
   };
 
-  useEffect(() => {
-    loadProducts();
-  }, []);
-
-  useEffect(() => {
-    return () => {
-      form.newImageFiles.forEach((f) => URL.revokeObjectURL(f.preview));
-    };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
-
-  const counts = useMemo(() => {
-    const active = products.filter((p) => p.status !== 'inactive').length;
-    const outOfStock = products.filter((p) => p.status !== 'inactive' && Number(p.stock) <= 0).length;
-    const lowStock = products.filter(
-      (p) => p.status !== 'inactive'
-        && Number(p.stock) > 0
-        && Number(p.stock) <= Number(p.lowStockThreshold ?? 20)
-    ).length;
-    return { total: products.length, active, lowStock, outOfStock };
-  }, [products]);
-
-  const filteredProducts = useMemo(() => {
-    return products.filter((p) => {
-      const matchesSearch = !search || p.name.toLowerCase().includes(search.toLowerCase());
-      const badge = stockBadge(p);
-      const matchesStatus =
-        statusFilter === 'all' ||
-        (statusFilter === 'active' && p.status !== 'inactive') ||
-        (statusFilter === 'inactive' && p.status === 'inactive') ||
-        (statusFilter === 'out-of-stock' && badge.cls === 'out-of-stock');
-      return matchesSearch && matchesStatus;
-    });
-  }, [products, search, statusFilter]);
-
-  function resetForm() {
-    setForm(EMPTY_FORM);
-    setEditingId(null);
-    setFormError('');
-    setShowForm(false);
+  if (products === null) {
+    return <div className="panel"><div className="skeleton-rows"><div className="skeleton" /><div className="skeleton" /><div className="skeleton" /></div></div>;
   }
 
-  function openAdd() {
-    setForm(EMPTY_FORM);
-    setEditingId(null);
-    setFormError('');
-    setShowForm(true);
-  }
-
-  function openEdit(p) {
-    setForm({
-      name: p.name || '',
-      variety: p.variety || RICE_VARIETIES[0],
-      description: p.description || '',
-      price: p.price ?? '',
-      stock: p.stock ?? '',
-      lowStockThreshold: p.lowStockThreshold ?? 20,
-      status: p.status || 'active',
-      weightTiers: p.weightTiers || [],
-      existingImages: p.images || [],
-      newImageFiles: [],
-    });
-    setEditingId(p._id);
-    setFormError('');
-    setShowForm(true);
-  }
-
-  function handleImagesSelected(e) {
-    const files = Array.from(e.target.files || []);
-    const totalCount = form.existingImages.length + form.newImageFiles.length + files.length;
-    if (totalCount > 5) {
-      setFormError('Maximum 5 images per product.');
-      return;
-    }
-    const withPreview = files.map((file) => Object.assign(file, { preview: URL.createObjectURL(file) }));
-    setForm((f) => ({ ...f, newImageFiles: [...f.newImageFiles, ...withPreview] }));
-    e.target.value = '';
-  }
-
-  function removeExistingImage(idx) {
-    setForm((f) => ({ ...f, existingImages: f.existingImages.filter((_, i) => i !== idx) }));
-  }
-
-  function removeNewImage(idx) {
-    setForm((f) => {
-      const target = f.newImageFiles[idx];
-      if (target) URL.revokeObjectURL(target.preview);
-      return { ...f, newImageFiles: f.newImageFiles.filter((_, i) => i !== idx) };
-    });
-  }
-
-  function addWeightTier() {
-    const used = form.weightTiers.map((t) => t.weightKg);
-    const next = DEFAULT_WEIGHTS.find((w) => !used.includes(w)) || '';
-    setForm((f) => ({ ...f, weightTiers: [...f.weightTiers, { weightKg: next, discountPercent: 0 }] }));
-  }
-
-  function updateWeightTier(idx, field, value) {
-    setForm((f) => ({
-      ...f,
-      weightTiers: f.weightTiers.map((t, i) => (i === idx ? { ...t, [field]: value } : t)),
-    }));
-  }
-
-  function removeWeightTier(idx) {
-    setForm((f) => ({ ...f, weightTiers: f.weightTiers.filter((_, i) => i !== idx) }));
-  }
-
-  async function handleSubmit(e) {
-    e.preventDefault();
-    setFormError('');
-
-    if (!form.name.trim() || !form.variety || !form.description.trim() || !form.price || form.stock === '') {
-      setFormError('Product name, variety, description, price, and stock are required.');
-      return;
-    }
-    if (form.existingImages.length + form.newImageFiles.length === 0) {
-      setFormError('At least one product image is required.');
-      return;
-    }
-
-    setSubmitting(true);
-    try {
-      const payload = {
-        name: form.name,
-        variety: form.variety,
-        description: form.description,
-        price: form.price,
-        stock: form.stock,
-        lowStockThreshold: form.lowStockThreshold,
-        status: form.status,
-        weightTiers: form.weightTiers
-          .filter((t) => t.weightKg)
-          .map((t) => ({ weightKg: Number(t.weightKg), discountPercent: Number(t.discountPercent) || 0 })),
-        existingImages: form.existingImages,
-        newImageFiles: form.newImageFiles,
-      };
-
-      if (editingId) {
-        await updateProduct(editingId, payload);
-      } else {
-        await createProduct(payload);
-      }
-      resetForm();
-      await loadProducts();
-    } catch (err) {
-      setFormError(err.response?.data?.message || 'Could not save this product.');
-    } finally {
-      setSubmitting(false);
-    }
-  }
-
-  async function handleDelete(p) {
-    try {
-      await removeProduct(p._id);
-      await loadProducts();
-    } catch (err) {
-      setError(err.response?.data?.message || 'Could not delete this product.');
-    }
-  }
-
-  async function handleDuplicate(p) {
-    try {
-      await duplicateProduct(p._id);
-      await loadProducts();
-    } catch (err) {
-      setError(err.response?.data?.message || 'Could not duplicate this product.');
-    }
-  }
-
-  async function handleToggleStatus(p) {
-    try {
-      await updateProduct(p._id, { status: p.status === 'inactive' ? 'active' : 'inactive' });
-      await loadProducts();
-    } catch (err) {
-      setError(err.response?.data?.message || 'Could not update status.');
-    }
-  }
+  const counts = {
+    all: products.length,
+    sale: products.filter((p) => availability(p).label === 'For sale').length,
+    attention: products.filter((p) => ['Low stock', 'Sold out'].includes(availability(p).label)).length,
+    hidden: products.filter((p) => p.status === 'inactive').length,
+  };
 
   return (
-    <div className="ap-tab-content">
-      <div className="ap-prod-summary">
-        <div className="ap-prod-counts">
-          <span className="ap-count-chip">
-            <b>{counts.total}</b> listed
-          </span>
-          <span className="ap-count-chip ap-count-chip--good">
-            <b>{counts.active}</b> active
-          </span>
-          {counts.lowStock > 0 && (
-            <span className="ap-count-chip ap-count-chip--warn">
-              <b>{counts.lowStock}</b> low stock
-            </span>
-          )}
-          {counts.outOfStock > 0 && (
-            <span className="ap-count-chip ap-count-chip--bad">
-              <b>{counts.outOfStock}</b> out of stock
-            </span>
-          )}
+    <>
+      <div className="page-actions">
+        <div className="chips" role="group" aria-label="Show">
+          {[
+            ['all', 'All'], ['sale', 'For sale'], ['attention', 'Low or sold out'], ['hidden', 'Hidden'],
+          ].map(([id, label]) => (
+            <button key={id} type="button" className="chip" aria-pressed={filter === id} onClick={() => setFilter(id)}>
+              {label} <span className="chip-count">{counts[id]}</span>
+            </button>
+          ))}
         </div>
-
-        {!showForm && (
-          <button className="ap-btn-primary" type="button" onClick={openAdd}>
-            <Plus size={16} strokeWidth={2.5} />
-            Add product
-          </button>
-        )}
+        <button className="btn btn-primary" type="button" onClick={() => setEditing('new')}>
+          <Plus size={16} aria-hidden="true" /> Add product
+        </button>
       </div>
 
-      {error && <p className="ap-empty-state">{error}</p>}
+      {error && <p className="alert alert-danger" role="alert">{error}</p>}
 
-      {showForm && (
-        <div className="ap-panel ap-form-panel">
-          <h3>{editingId ? 'Edit Product' : 'New Product'}</h3>
-          {formError && <p className="ap-empty-state">{formError}</p>}
-          <form className="ap-prod-form" onSubmit={handleSubmit}>
-            <div className="ap-form-row">
-              <div className="ap-form-field">
-                <label>Product Name *</label>
-                <input
-                  type="text"
-                  placeholder="e.g. Premium Jasmine Rice"
-                  value={form.name}
-                  onChange={(e) => setForm((f) => ({ ...f, name: e.target.value }))}
-                  required
-                />
-              </div>
-              <div className="ap-form-field">
-                <label>Rice Variety *</label>
-                <select
-                  value={form.variety}
-                  onChange={(e) => setForm((f) => ({ ...f, variety: e.target.value }))}
-                >
-                  {RICE_VARIETIES.map((v) => (
-                    <option key={v} value={v}>{v}</option>
-                  ))}
-                </select>
-              </div>
-            </div>
-
-            <div className="ap-form-row">
-              <div className="ap-form-field" style={{ gridColumn: '1 / -1' }}>
-                <label>Description *</label>
-                <input
-                  type="text"
-                  placeholder="Describe your product"
-                  value={form.description}
-                  onChange={(e) => setForm((f) => ({ ...f, description: e.target.value }))}
-                  required
-                />
-              </div>
-            </div>
-
-            <div className="ap-form-row">
-              <div className="ap-form-field">
-                <label>Price per kg (₱) *</label>
-                <input
-                  type="number"
-                  placeholder="0.00"
-                  min="1"
-                  step="0.01"
-                  value={form.price}
-                  onChange={(e) => setForm((f) => ({ ...f, price: e.target.value }))}
-                  required
-                />
-              </div>
-              <div className="ap-form-field">
-                <label>Initial Stock (kg) *</label>
-                <input
-                  type="number"
-                  placeholder="0"
-                  min="0"
-                  value={form.stock}
-                  onChange={(e) => setForm((f) => ({ ...f, stock: e.target.value }))}
-                  required
-                />
-              </div>
-              <div className="ap-form-field">
-                <label>Low-stock threshold (kg)</label>
-                <input
-                  type="number"
-                  min="0"
-                  value={form.lowStockThreshold}
-                  onChange={(e) => setForm((f) => ({ ...f, lowStockThreshold: e.target.value }))}
-                />
-              </div>
-              <div className="ap-form-field">
-                <label>Status</label>
-                <select
-                  value={form.status}
-                  onChange={(e) => setForm((f) => ({ ...f, status: e.target.value }))}
-                >
-                  <option value="active">Active</option>
-                  <option value="inactive">Inactive</option>
-                </select>
-              </div>
-            </div>
-
-            <div className="ap-form-field" style={{ marginBottom: '0.9rem' }}>
-              <label>Weight options &amp; bulk discount</label>
-              <div className="ap-weight-tiers">
-                {form.weightTiers.map((t, idx) => {
-                  const base = Number(form.price) || 0;
-                  const final = base * (Number(t.weightKg) || 0) * (1 - (Number(t.discountPercent) || 0) / 100);
-                  return (
-                    <div className="ap-weight-tier-row" key={idx}>
-                      <select
-                        value={t.weightKg}
-                        onChange={(e) => updateWeightTier(idx, 'weightKg', e.target.value)}
-                      >
-                        <option value="">kg</option>
-                        {DEFAULT_WEIGHTS.map((w) => (
-                          <option key={w} value={w}>{w} kg</option>
-                        ))}
-                      </select>
-                      <div className="ap-weight-tier-discount">
-                        <input
-                          type="number"
-                          min="0"
-                          max="100"
-                          value={t.discountPercent}
-                          onChange={(e) => updateWeightTier(idx, 'discountPercent', e.target.value)}
-                        />
-                        <span>% off</span>
-                      </div>
-                      <span className="ap-weight-tier-final">
-                        = ₱{final > 0 ? final.toLocaleString(undefined, { maximumFractionDigits: 2 }) : '—'}
-                      </span>
-                      <button type="button" className="ap-icon-btn delete" onClick={() => removeWeightTier(idx)} aria-label="Remove tier"><X size={13} strokeWidth={2.6} /></button>
-                    </div>
-                  );
-                })}
-                <button type="button" className="ap-btn-ghost" onClick={addWeightTier}>+ Add weight option</button>
-              </div>
-            </div>
-
-            <div className="ap-form-field" style={{ marginBottom: '0.9rem' }}>
-              <label>Images * (max 5)</label>
-              <div className="ap-image-grid">
-                {form.existingImages.map((src, idx) => (
-                  <div className="ap-image-thumb" key={`existing-${idx}`}>
-                    <img src={`${API_ORIGIN}${src}`} alt="Product" />
-                    <button type="button" onClick={() => removeExistingImage(idx)} aria-label="Remove image"><X size={13} strokeWidth={2.6} /></button>
-                  </div>
-                ))}
-                {form.newImageFiles.map((file, idx) => (
-                  <div className="ap-image-thumb" key={`new-${idx}`}>
-                    <img src={file.preview} alt="New upload" />
-                    <button type="button" onClick={() => removeNewImage(idx)} aria-label="Remove image"><X size={13} strokeWidth={2.6} /></button>
-                  </div>
-                ))}
-                {form.existingImages.length + form.newImageFiles.length < 5 && (
-                  <label className="ap-image-upload-btn">
-                    +
-                    <input type="file" accept="image/*" multiple onChange={handleImagesSelected} hidden />
-                  </label>
-                )}
-              </div>
-            </div>
-
-            <div className="ap-form-actions">
-              <button type="button" className="ap-btn-ghost" onClick={resetForm}>Cancel</button>
-              <button type="submit" className="ap-btn-primary" disabled={submitting}>
-                {submitting ? 'Saving…' : editingId ? 'Save Changes' : 'Add Product'}
-              </button>
-            </div>
-          </form>
+      <section className="panel">
+        <div className="panel-head">
+          <label className="sr-only" htmlFor="product-search">Search products</label>
+          <input
+            id="product-search"
+            className="input search-input"
+            type="search"
+            placeholder="Search by name…"
+            autoComplete="off"
+            value={search}
+            onChange={(e) => setSearch(e.target.value)}
+          />
         </div>
-      )}
 
-      <div className="ap-panel">
-        <div className="ap-panel-header">
-          <div className="ap-toolbar">
-            <input
-              type="text"
-              className="ap-search-input"
-              placeholder="Search products…"
-              value={search}
-              onChange={(e) => setSearch(e.target.value)}
-            />
-            <select value={statusFilter} onChange={(e) => setStatusFilter(e.target.value)}>
-              <option value="all">All status</option>
-              <option value="active">Active</option>
-              <option value="inactive">Inactive</option>
-              <option value="out-of-stock">Out of Stock</option>
-            </select>
-          </div>
-        </div>
-        {loading ? (
-          <div className="ap-prod-skeletons">
-            {[0, 1, 2, 3].map((i) => <div key={i} className="ap-skeleton" style={{ height: 56 }} />)}
-          </div>
-        ) : filteredProducts.length === 0 ? (
-          <div className="ap-empty-state">
-            {products.length === 0 ? <Package size={28} strokeWidth={1.6} /> : <PackageSearch size={28} strokeWidth={1.6} />}
-            <p>
-              {products.length === 0
-                ? 'No products listed yet. Add your first product to start selling.'
-                : 'No products match this search or filter.'}
-            </p>
-            {products.length === 0 && !showForm && (
-              <button className="ap-btn-primary" type="button" onClick={openAdd}>
-                <Plus size={16} strokeWidth={2.5} />
-                Add product
-              </button>
+        {shown.length === 0 ? (
+          <div className="empty">
+            {products.length === 0 ? (
+              <>
+                <strong>No products yet</strong>
+                <p>Add your first rice listing. Buyers see it in the app once it has stock.</p>
+                <button className="btn btn-primary" type="button" onClick={() => setEditing('new')}>Add product</button>
+              </>
+            ) : (
+              <p>No products match.</p>
             )}
           </div>
         ) : (
-          <div className="ap-table-wrap">
-            <table className="ap-table ap-prod-table">
+          <div className="table-wrap">
+            <table className="table table-stack">
               <thead>
                 <tr>
                   <th>Product</th>
-                  <th className="ap-th-num">Price</th>
-                  <th>Stock</th>
+                  <th className="is-num">Price</th>
+                  <th className="is-num">Stock</th>
                   <th>Status</th>
-                  <th className="ap-th-actions">Actions</th>
+                  <th className="is-actions"><span className="sr-only">Actions</span></th>
                 </tr>
               </thead>
               <tbody>
-                {filteredProducts.map((p) => {
-                  const badge = stockBadge(p);
-                  const threshold = Number(p.lowStockThreshold ?? 20);
-                  const stock = Number(p.stock ?? 0);
-                  // Full bar at 2x the low-stock threshold - a sensible "healthy" mark.
-                  const fillPct = Math.min(100, (stock / Math.max(threshold * 2, 1)) * 100);
-
+                {shown.map((p) => {
+                  const state = availability(p);
                   return (
                     <tr key={p._id}>
-                      <td>
-                        <div className="ap-prod-cell">
-                          {p.images?.[0] ? (
-                            <img src={`${API_ORIGIN}${p.images[0]}`} alt="" className="ap-row-thumb" />
-                          ) : (
-                            <div className="ap-row-thumb ap-row-thumb-empty">
-                              <Package size={16} strokeWidth={2} />
-                            </div>
-                          )}
-                          <div className="ap-prod-cell-text">
-                            <span className="ap-prod-name">{p.name}</span>
-                            <span className="ap-prod-variety">{p.variety || 'No variety set'}</span>
-                          </div>
+                      <td className="is-primary">
+                        <div className="product-cell">
+                          {p.images?.[0]
+                            ? <img src={`${API_ORIGIN}${p.images[0]}`} alt="" width="40" height="40" loading="lazy" />
+                            : <span className="product-thumb-empty" aria-hidden="true"><Wheat size={18} /></span>}
+                          <span className="cell-main">
+                            <strong>{p.name}</strong>
+                            <span>{p.variety}</span>
+                          </span>
                         </div>
                       </td>
-
-                      <td className="ap-td-num">
-                        {p.price != null ? (
-                          <>
-                            <span className="ap-price">₱{Number(p.price).toLocaleString()}</span>
-                            <span className="ap-price-unit">/kg</span>
-                          </>
-                        ) : '—'}
+                      <td data-label="Price" className="is-num">{peso(p.price)} / kg</td>
+                      <td data-label="Stock" className="is-num">{number(p.stock)} kg</td>
+                      <td data-label="Status">
+                        <span className={`badge${state.tone ? ` badge-${state.tone}` : ''}`}>{state.label}</span>
                       </td>
-
-                      <td>
-                        <div className="ap-stock-cell">
-                          <span className="ap-stock-value">{stock.toLocaleString()} kg</span>
-                          <div className="ap-stock-bar-track">
-                            <div
-                              className={`ap-stock-bar-fill ap-stock-bar-${badge.cls}`}
-                              style={{ width: `${Math.max(3, fillPct)}%` }}
-                            />
-                          </div>
-                        </div>
-                      </td>
-
-                      <td>
-                        <span className={`ap-badge ap-badge-${badge.cls}`}>{badge.label}</span>
-                      </td>
-
-                      <td>
-                        <div className="ap-row-actions">
-                          <button className="ap-icon-btn" type="button" onClick={() => openEdit(p)} title="Edit">
-                            <Pencil size={15} strokeWidth={2.2} />
+                      <td className="is-actions">
+                        <span className="row-actions">
+                          <button type="button" className="btn btn-secondary btn-sm" onClick={() => setEditing(p)}>
+                            Edit
                           </button>
-                          <button className="ap-icon-btn" type="button" onClick={() => handleDuplicate(p)} title="Duplicate">
-                            <Copy size={15} strokeWidth={2.2} />
-                          </button>
-                          <button
-                            className="ap-icon-btn"
-                            type="button"
-                            onClick={() => handleToggleStatus(p)}
-                            title={p.status === 'inactive' ? 'Set active' : 'Set inactive'}
-                          >
-                            {p.status === 'inactive'
-                              ? <Play size={15} strokeWidth={2.2} />
-                              : <Pause size={15} strokeWidth={2.2} />}
-                          </button>
-                          <button className="ap-icon-btn delete" type="button" onClick={() => handleDelete(p)} title="Delete">
-                            <Trash2 size={15} strokeWidth={2.2} />
-                          </button>
-                        </div>
+                          <ActionsMenu
+                            label={`More actions for ${p.name}`}
+                            items={[
+                              {
+                                label: p.status === 'inactive' ? 'Show to buyers' : 'Hide from buyers',
+                                onClick: () => run(
+                                  () => updateProduct(p._id, { status: p.status === 'inactive' ? 'active' : 'inactive' }),
+                                  'Could not update this product.',
+                                ),
+                              },
+                              { label: 'Duplicate', onClick: () => run(() => duplicateProduct(p._id), 'Could not duplicate this product.') },
+                              { label: 'Delete', danger: true, separatorBefore: true, onClick: () => setDeleting(p) },
+                            ]}
+                          />
+                        </span>
                       </td>
                     </tr>
                   );
@@ -568,7 +214,245 @@ export default function ProductListTab() {
             </table>
           </div>
         )}
-      </div>
-    </div>
+      </section>
+
+      {editing && (
+        <ProductForm
+          product={editing === 'new' ? null : editing}
+          onClose={() => setEditing(null)}
+          onSaved={async () => {
+            setEditing(null);
+            await load();
+          }}
+        />
+      )}
+
+      {deleting && (
+        <ConfirmDialog
+          title={`Delete ${deleting.name}?`}
+          confirmLabel="Delete product"
+          danger
+          busy={busy}
+          onConfirm={confirmDelete}
+          onClose={() => setDeleting(null)}
+        >
+          <p>Buyers will no longer see it. Orders already placed keep their details. This cannot be undone.</p>
+        </ConfirmDialog>
+      )}
+    </>
+  );
+}
+
+function ProductForm({ product, onClose, onSaved }) {
+  const [form, setForm] = useState(() => (product
+    ? {
+      name: product.name || '',
+      variety: product.variety || RICE_VARIETIES[0],
+      description: product.description || '',
+      price: product.price ?? '',
+      stock: product.stock ?? '',
+      lowStockThreshold: product.lowStockThreshold ?? 20,
+      status: product.status || 'active',
+      weightTiers: product.weightTiers || [],
+      existingImages: product.images || [],
+      newImageFiles: [],
+    }
+    : EMPTY_FORM));
+  const [saving, setSaving] = useState(false);
+  const [error, setError] = useState('');
+
+  const set = (key) => (e) => setForm((f) => ({ ...f, [key]: e.target.value }));
+  const imageCount = form.existingImages.length + form.newImageFiles.length;
+
+  function addImages(e) {
+    const files = Array.from(e.target.files || []);
+    e.target.value = '';
+    if (imageCount + files.length > 5) {
+      setError('A product can have up to 5 photos.');
+      return;
+    }
+    const withPreview = files.map((file) => Object.assign(file, { preview: URL.createObjectURL(file) }));
+    setForm((f) => ({ ...f, newImageFiles: [...f.newImageFiles, ...withPreview] }));
+  }
+
+  function addTier() {
+    const used = form.weightTiers.map((t) => Number(t.weightKg));
+    const next = SACK_SIZES.find((w) => !used.includes(w)) || '';
+    setForm((f) => ({ ...f, weightTiers: [...f.weightTiers, { weightKg: next, discountPercent: 0 }] }));
+  }
+
+  const setTier = (idx, key, value) => setForm((f) => ({
+    ...f,
+    weightTiers: f.weightTiers.map((t, i) => (i === idx ? { ...t, [key]: value } : t)),
+  }));
+
+  async function submit(e) {
+    e.preventDefault();
+    setError('');
+    if (!form.name.trim() || !form.description.trim() || !form.price || form.stock === '') {
+      setError('Fill in the name, description, price and stock.');
+      return;
+    }
+    if (imageCount === 0) {
+      setError('Add at least one photo. Buyers choose rice by how it looks.');
+      return;
+    }
+
+    setSaving(true);
+    try {
+      const payload = {
+        ...form,
+        weightTiers: form.weightTiers
+          .filter((t) => t.weightKg)
+          .map((t) => ({ weightKg: Number(t.weightKg), discountPercent: Number(t.discountPercent) || 0 })),
+      };
+      if (product) await updateProduct(product._id, payload);
+      else await createProduct(payload);
+      await onSaved();
+    } catch (err) {
+      setError(getErrorMessage(err, 'Could not save this product.'));
+      setSaving(false);
+    }
+  }
+
+  return (
+    <Modal title={product ? `Edit ${product.name}` : 'Add a product'} size="lg" onClose={onClose}>
+      <form onSubmit={submit} noValidate>
+        <div className="modal-body">
+          <div className="form-grid-2">
+            <label className="field">
+              <span className="field-label">Product name</span>
+              <input className="input" value={form.name} onChange={set('name')} placeholder="Premium Jasmine…" autoComplete="off" />
+            </label>
+            <label className="field">
+              <span className="field-label">Variety</span>
+              <select className="select" value={form.variety} onChange={set('variety')}>
+                {RICE_VARIETIES.map((v) => <option key={v} value={v}>{v}</option>)}
+              </select>
+            </label>
+            <label className="field span-all">
+              <span className="field-label">Description</span>
+              <textarea className="textarea" rows={2} value={form.description} onChange={set('description')} placeholder="Grain, aroma, where it was grown…" />
+            </label>
+          </div>
+
+          <div className="form-grid-3">
+            <label className="field">
+              <span className="field-label">Price per kg (₱)</span>
+              <input className="input" type="number" inputMode="decimal" min="1" step="0.01" value={form.price} onChange={set('price')} />
+            </label>
+            <label className="field">
+              <span className="field-label">{product ? 'Stock (kg)' : 'Starting stock (kg)'}</span>
+              <input className="input" type="number" inputMode="numeric" min="0" value={form.stock} onChange={set('stock')} />
+              {product && <span className="field-hint">To record a harvest or a loss, use Inventory instead.</span>}
+            </label>
+            <label className="field">
+              <span className="field-label">Warn me below (kg)</span>
+              <input className="input" type="number" inputMode="numeric" min="0" value={form.lowStockThreshold} onChange={set('lowStockThreshold')} />
+            </label>
+          </div>
+
+          <fieldset className="field">
+            <legend className="field-label">Sack sizes and bulk discounts</legend>
+            <span className="field-hint">Buyers can always buy by the kilo. Add bigger sacks, with a discount if you offer one.</span>
+            {form.weightTiers.length > 0 && (
+              <ul className="tier-list">
+                {form.weightTiers.map((t, idx) => {
+                  const each = (Number(form.price) || 0) * (Number(t.weightKg) || 0) * (1 - (Number(t.discountPercent) || 0) / 100);
+                  return (
+                    <li key={idx} className="tier-row">
+                      <label className="sr-only" htmlFor={`tier-w-${idx}`}>Sack size</label>
+                      <select id={`tier-w-${idx}`} className="select" value={t.weightKg} onChange={(e) => setTier(idx, 'weightKg', e.target.value)}>
+                        <option value="">Size</option>
+                        {SACK_SIZES.map((w) => <option key={w} value={w}>{w} kg</option>)}
+                      </select>
+                      <label className="tier-discount">
+                        <input
+                          className="input"
+                          type="number"
+                          inputMode="numeric"
+                          min="0"
+                          max="100"
+                          value={t.discountPercent}
+                          onChange={(e) => setTier(idx, 'discountPercent', e.target.value)}
+                          aria-label="Discount percent"
+                        />
+                        <span>% off</span>
+                      </label>
+                      <span className="tier-price num">{each > 0 ? `${peso(each)} a sack` : ''}</span>
+                      <button
+                        type="button"
+                        className="btn btn-ghost btn-icon btn-sm"
+                        aria-label="Remove this sack size"
+                        onClick={() => setForm((f) => ({ ...f, weightTiers: f.weightTiers.filter((_, i) => i !== idx) }))}
+                      >
+                        <X size={15} aria-hidden="true" />
+                      </button>
+                    </li>
+                  );
+                })}
+              </ul>
+            )}
+            <div>
+              <button type="button" className="btn btn-secondary btn-sm" onClick={addTier}>Add a sack size</button>
+            </div>
+          </fieldset>
+
+          <fieldset className="field">
+            <legend className="field-label">Photos <span className="optional">({imageCount} of 5)</span></legend>
+            <div className="thumbs">
+              {form.existingImages.map((src, idx) => (
+                <div className="thumb" key={src}>
+                  <img src={`${API_ORIGIN}${src}`} alt={`Photo ${idx + 1}`} width="88" height="88" />
+                  <button
+                    type="button"
+                    aria-label={`Remove photo ${idx + 1}`}
+                    onClick={() => setForm((f) => ({ ...f, existingImages: f.existingImages.filter((_, i) => i !== idx) }))}
+                  >
+                    <X size={13} aria-hidden="true" />
+                  </button>
+                </div>
+              ))}
+              {form.newImageFiles.map((file, idx) => (
+                <div className="thumb" key={file.preview}>
+                  <img src={file.preview} alt={`New photo ${idx + 1}`} width="88" height="88" />
+                  <button
+                    type="button"
+                    aria-label={`Remove new photo ${idx + 1}`}
+                    onClick={() => setForm((f) => ({ ...f, newImageFiles: f.newImageFiles.filter((_, i) => i !== idx) }))}
+                  >
+                    <X size={13} aria-hidden="true" />
+                  </button>
+                </div>
+              ))}
+              {imageCount < 5 && (
+                <label className="thumb thumb-add">
+                  <ImagePlus size={20} aria-hidden="true" />
+                  <span>Add</span>
+                  <input type="file" accept="image/jpeg,image/png,image/webp" multiple hidden onChange={addImages} />
+                </label>
+              )}
+            </div>
+          </fieldset>
+
+          <label className="check">
+            <input
+              type="checkbox"
+              checked={form.status !== 'inactive'}
+              onChange={(e) => setForm((f) => ({ ...f, status: e.target.checked ? 'active' : 'inactive' }))}
+            />
+            Show this product to buyers
+          </label>
+
+          {error && <p className="alert alert-danger" role="alert">{error}</p>}
+        </div>
+        <div className="modal-actions">
+          <button type="button" className="btn btn-secondary" onClick={onClose}>Cancel</button>
+          <button type="submit" className="btn btn-primary" disabled={saving}>
+            {saving ? 'Saving…' : product ? 'Save changes' : 'Add product'}
+          </button>
+        </div>
+      </form>
+    </Modal>
   );
 }

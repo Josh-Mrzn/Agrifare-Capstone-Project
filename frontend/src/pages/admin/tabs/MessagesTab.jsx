@@ -1,20 +1,18 @@
-import { SquarePen, MessagesSquare, Send } from 'lucide-react';
 import React, { useEffect, useRef, useState } from 'react';
+import { ArrowLeft, Send } from 'lucide-react';
 import { fetchConversations, fetchConversationMessages, sendChatMessage } from '../../../services/chatApi';
-import { API_ORIGIN } from '../../../services/authApi';
+import { API_ORIGIN, getErrorMessage } from '../../../services/authApi';
+import { formatTime, formatDate, initialsOf, wholePeso, number } from '../../../utils/format';
 
 /**
  * The signed-in seller's numeric id.
  *
  * `/auth/login` returns it as `id` while `/user/me` returns it as `userId`,
  * and the session holds whichever the login stored. Reading only one of the
- * two is how this screen came to show the seller as their own chat partner:
- * "the participant who is not me" matched nobody, so it fell through to the
- * first participant, which is the seller.
+ * two is how this screen once showed the seller as their own chat partner.
  */
 function myNumericId(user) {
-  const raw = user?.userId ?? user?.id;
-  const n = Number(raw);
+  const n = Number(user?.userId ?? user?.id);
   return Number.isFinite(n) && n > 0 ? n : null;
 }
 
@@ -27,245 +25,189 @@ function previewOf(message) {
   return 'No messages yet';
 }
 
+/** Today shows the time; anything older shows the date. */
+function when(value) {
+  if (!value) return '';
+  const d = new Date(value);
+  return d.toDateString() === new Date().toDateString() ? formatTime(d) : formatDate(d);
+}
+
 export default function MessagesTab({ user }) {
-  const [conversations, setConversations] = useState([]);
+  const [conversations, setConversations] = useState(null);
   const [selectedId, setSelectedId] = useState(null);
   const [messages, setMessages] = useState([]);
-  const [msgInput, setMsgInput] = useState('');
+  const [draft, setDraft] = useState('');
   const [sending, setSending] = useState(false);
-  const [newRecipientId, setNewRecipientId] = useState('');
-  const [showNewChat, setShowNewChat] = useState(false);
-  const [newChatError, setNewChatError] = useState('');
-  const msgEndRef = useRef(null);
+  const [error, setError] = useState('');
+  const endRef = useRef(null);
+  const me = myNumericId(user);
 
   const loadConversations = async () => {
     try {
       const res = await fetchConversations();
       setConversations(Array.isArray(res.data) ? res.data : []);
     } catch {
-      setConversations([]);
+      setConversations((prev) => prev || []);
     }
   };
 
+  // Polled rather than pushed: a new message shows within a few seconds.
   useEffect(() => {
     loadConversations();
-    const interval = setInterval(loadConversations, 5000);
+    const interval = setInterval(loadConversations, 8000);
     return () => clearInterval(interval);
   }, []);
 
-  const loadMessages = async (conversationId) => {
-    try {
-      const res = await fetchConversationMessages(conversationId);
-      setMessages(Array.isArray(res.data) ? res.data : []);
-    } catch {
-      setMessages([]);
-    }
-  };
-
   useEffect(() => {
-    if (!selectedId) return;
-    loadMessages(selectedId);
-    const interval = setInterval(() => loadMessages(selectedId), 4000);
+    if (!selectedId) return undefined;
+    const load = () => fetchConversationMessages(selectedId)
+      .then((res) => setMessages(Array.isArray(res.data) ? res.data : []))
+      .catch(() => {});
+    load();
+    const interval = setInterval(load, 5000);
     return () => clearInterval(interval);
   }, [selectedId]);
 
   useEffect(() => {
-    msgEndRef.current?.scrollIntoView({ behavior: 'smooth' });
-  }, [messages]);
+    endRef.current?.scrollIntoView({ block: 'end' });
+  }, [messages.length]);
 
-  const myUserId = myNumericId(user);
+  /** The person on the other end. Never falls back to the seller themselves. */
+  const otherOf = (convo) => (me ? convo.participants.find((p) => p.userId !== me) || null : null);
 
-  /**
-   * The person on the other end, or null.
-   *
-   * Null rather than falling back to the first participant: showing the seller
-   * their own name is worse than showing nothing, because a reply then goes to
-   * themselves.
-   */
-  function otherParticipant(convo) {
-    if (!myUserId) return null;
-    return convo.participants.find((p) => p.userId !== myUserId) || null;
-  }
+  const selected = conversations?.find((c) => c._id === selectedId);
+  const other = selected ? otherOf(selected) : null;
 
-  async function handleSend() {
-    if (!msgInput.trim()) return;
-    const convo = conversations.find((c) => c._id === selectedId);
-    const recipient = convo ? otherParticipant(convo) : null;
-    if (!recipient) return;
-
+  async function send(e) {
+    e.preventDefault();
+    if (!draft.trim() || !other) return;
     setSending(true);
+    setError('');
     try {
-      await sendChatMessage(recipient.userId, msgInput.trim());
-      setMsgInput('');
-      await loadMessages(selectedId);
-      await loadConversations();
-    } catch {
-      // leave the input as-is so the seller can retry
+      await sendChatMessage(other.userId, draft.trim());
+      setDraft('');
+      const res = await fetchConversationMessages(selectedId);
+      setMessages(Array.isArray(res.data) ? res.data : []);
+      loadConversations();
+    } catch (err) {
+      setError(getErrorMessage(err, 'Your message was not sent. Try again.'));
     } finally {
       setSending(false);
     }
   }
 
-  function handleMsgKey(e) {
-    if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); handleSend(); }
+  if (conversations === null) {
+    return <div className="panel"><div className="skeleton-rows"><div className="skeleton" /><div className="skeleton" /></div></div>;
   }
-
-  async function handleStartNewChat(e) {
-    e.preventDefault();
-    setNewChatError('');
-    const recipientId = Number(newRecipientId);
-    if (!recipientId) {
-      setNewChatError('Enter a valid numeric User ID.');
-      return;
-    }
-    try {
-      await sendChatMessage(recipientId, 'Hi! Reaching out about your order.');
-      setNewRecipientId('');
-      setShowNewChat(false);
-      await loadConversations();
-    } catch (err) {
-      setNewChatError(err.response?.data?.message || 'Could not start this conversation.');
-    }
-  }
-
-  const selectedConvo = conversations.find((c) => c._id === selectedId);
-  const selectedOther = selectedConvo ? otherParticipant(selectedConvo) : null;
 
   return (
-    <div className="ap-tab-content ap-chat-layout">
-      <div className="ap-chat-sidebar">
-        <div className="ap-chat-sidebar-header">
-          <h3>Messages</h3>
-          <button className="ap-icon-btn" type="button" onClick={() => setShowNewChat((s) => !s)} title="New message"><SquarePen size={15} strokeWidth={2.2} /></button>
-        </div>
-        {showNewChat && (
-          <form className="ap-chat-new-form" onSubmit={handleStartNewChat}>
-            {newChatError && <p className="ap-empty-state" style={{ padding: '0.5rem' }}>{newChatError}</p>}
-            <input
-              type="number"
-              placeholder="Buyer's User ID"
-              value={newRecipientId}
-              onChange={(e) => setNewRecipientId(e.target.value)}
-            />
-            <button type="submit" className="ap-btn-primary">Start</button>
-          </form>
-        )}
+    <section className={`panel chat${selected ? ' has-thread' : ''}`}>
+      <div className="chat-list">
+        <div className="panel-head"><h2>Conversations</h2></div>
         {conversations.length === 0 ? (
-          <p className="ap-empty-state" style={{ padding: '1rem' }}>No conversations yet.</p>
+          <div className="empty">
+            <strong>No messages yet</strong>
+            <p>Buyers can message you from your shop in the app. Every order also starts a conversation.</p>
+          </div>
         ) : (
-          conversations.map((c) => {
-            const other = otherParticipant(c);
-
-            // Signed in with a session that predates the id fix. Saying so
-            // beats listing a row that would reply to the seller themselves.
-            if (!other) {
+          <ul className="list">
+            {conversations.map((c) => {
+              const person = otherOf(c);
+              if (!person) {
+                return <li key={c._id} className="list-row muted">Sign out and back in to load this conversation.</li>;
+              }
               return (
-                <div key={c._id} className="ap-empty-state" style={{ padding: '0.75rem' }}>
-                  Sign out and back in to load this conversation.
-                </div>
+                <li key={c._id}>
+                  <button
+                    type="button"
+                    className="list-row chat-row"
+                    aria-current={c._id === selectedId ? 'true' : undefined}
+                    onClick={() => setSelectedId(c._id)}
+                  >
+                    <span className="avatar">{initialsOf(person.name)}</span>
+                    <span className="list-row-main">
+                      <strong>{person.name}</strong>
+                      <span className="chat-preview">{previewOf(c.lastMessage)}</span>
+                    </span>
+                    <span className="list-row-side chat-meta">
+                      <span className="muted">{when(c.lastMessage?.createdAt)}</span>
+                      {c.unreadCount > 0 && <span className="chat-unread">{c.unreadCount}</span>}
+                    </span>
+                  </button>
+                </li>
               );
-            }
-
-            return (
-              <button
-                key={c._id}
-                className={`ap-chat-user ${selectedId === c._id ? 'active' : ''}`}
-                onClick={() => setSelectedId(c._id)}
-              >
-                <div className="ap-chat-avatar">{(other?.name || '?').slice(0, 2).toUpperCase()}</div>
-                <div className="ap-chat-user-info">
-                  <span className="ap-chat-user-name">{other?.name || 'Unknown'}</span>
-                  <span className="ap-chat-user-last">{previewOf(c.lastMessage)}</span>
-                </div>
-                <div className="ap-chat-meta">
-                  <span className="ap-chat-time">
-                    {c.lastMessage ? new Date(c.lastMessage.createdAt).toLocaleTimeString('en-PH', { hour: '2-digit', minute: '2-digit' }) : ''}
-                  </span>
-                </div>
-              </button>
-            );
-          })
+            })}
+          </ul>
         )}
       </div>
 
-      <div className="ap-chat-main">
-        {!selectedConvo ? (
-          <div className="ap-chat-empty">
-            <div className="ap-chat-empty-icon"><MessagesSquare size={30} strokeWidth={1.6} /></div>
-            <p>Select a conversation to start messaging</p>
-          </div>
+      <div className="chat-thread">
+        {!selected ? (
+          <div className="empty chat-placeholder"><p>Choose a conversation.</p></div>
         ) : (
           <>
-            <div className="ap-chat-header">
-              <div className="ap-chat-avatar">{(selectedOther?.name || '?').slice(0, 2).toUpperCase()}</div>
-              <div>
-                <div className="ap-chat-header-name">{selectedOther?.name}</div>
-                <div className="ap-chat-header-status">{selectedOther?.role}</div>
+            <div className="panel-head chat-head">
+              <button type="button" className="btn btn-ghost btn-icon btn-sm chat-back" aria-label="Back to conversations" onClick={() => setSelectedId(null)}>
+                <ArrowLeft size={18} aria-hidden="true" />
+              </button>
+              <span className="avatar">{initialsOf(other?.name)}</span>
+              <div className="cell-main">
+                <strong>{other?.name}</strong>
+                <span>{other?.role === 'buyer' ? 'Buyer' : other?.role}</span>
               </div>
             </div>
-            <div className="ap-chat-messages">
+
+            <div className="chat-messages" aria-live="polite">
               {messages.map((m) => {
-                // An order update is nobody's turn. It sits across the thread
-                // rather than on one side of it.
+                // An order update is nobody's turn, so it sits across the thread.
                 if (m.kind === 'system') {
-                  return (
-                    <div key={m._id} className="ap-msg-system">
-                      <span>{m.text}</span>
-                    </div>
-                  );
+                  return <p key={m._id} className="msg-system">{m.text}</p>;
                 }
-
-                const mine = m.sender?.userId === myUserId;
-
+                const mine = m.sender?.userId === me;
                 return (
-                  <div key={m._id} className={`ap-msg ${mine ? 'ap-msg-out' : 'ap-msg-in'}`}>
-                    <div className="ap-msg-bubble">
+                  <div key={m._id} className={`msg${mine ? ' is-mine' : ''}`}>
+                    <div className="msg-bubble">
                       {m.product && (
-                        <div className="ap-msg-product">
+                        <span className="msg-product">
                           <strong>{m.product.name}</strong>
                           <span>
-                            ₱{Number(m.product.price || 0).toFixed(0)} per kg ·{' '}
-                            {m.product.stock > 0 ? `${m.product.stock} kg left` : 'Out of stock'}
+                            {wholePeso(m.product.price)} per kg,{' '}
+                            {m.product.stock > 0 ? `${number(m.product.stock)} kg left` : 'sold out'}
                           </span>
-                        </div>
+                        </span>
                       )}
                       {m.mediaUrl && (
-                        // Chat photos live in the public media folder, not
-                        // behind /api/files, so a plain img is enough. Saying
-                        // "Photo attached" made the seller ask what it was.
-                        <a
-                          href={`${API_ORIGIN}${m.mediaUrl}`}
-                          target="_blank"
-                          rel="noreferrer"
-                          className="ap-msg-photo"
-                        >
-                          <img src={`${API_ORIGIN}${m.mediaUrl}`} alt="Sent attachment" />
+                        <a href={`${API_ORIGIN}${m.mediaUrl}`} target="_blank" rel="noreferrer" className="msg-photo">
+                          <img src={`${API_ORIGIN}${m.mediaUrl}`} alt="Photo sent in chat" loading="lazy" />
                         </a>
                       )}
                       {m.text}
                     </div>
-                    <div className="ap-msg-time">{new Date(m.createdAt).toLocaleTimeString('en-PH', { hour: '2-digit', minute: '2-digit' })}</div>
+                    <span className="msg-time">{when(m.createdAt)}</span>
                   </div>
                 );
               })}
-              <div ref={msgEndRef} />
+              <div ref={endRef} />
             </div>
-            <div className="ap-chat-input-row">
+
+            <form className="chat-compose" onSubmit={send}>
+              <label className="sr-only" htmlFor="chat-draft">Message</label>
               <input
-                className="ap-chat-input"
-                type="text"
-                placeholder="Type a message…"
-                value={msgInput}
-                onChange={(e) => setMsgInput(e.target.value)}
-                onKeyDown={handleMsgKey}
+                id="chat-draft"
+                className="input"
+                placeholder="Write a message…"
+                autoComplete="off"
+                value={draft}
+                onChange={(e) => setDraft(e.target.value)}
               />
-              <button className="ap-chat-send" onClick={handleSend} disabled={!msgInput.trim() || sending}>
-                Send <Send size={14} strokeWidth={2.3} />
+              <button className="btn btn-primary" type="submit" disabled={!draft.trim() || sending}>
+                <Send size={16} aria-hidden="true" /> Send
               </button>
-            </div>
+            </form>
+            {error && <p className="alert alert-danger chat-error">{error}</p>}
           </>
         )}
       </div>
-    </div>
+    </section>
   );
 }

@@ -1,7 +1,6 @@
 import React, { useEffect, useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
-import './AuthPages.css';
-import logoImg from '../../assets/logo.png';
+import AuthLayout from './AuthLayout';
 import {
   requestPasswordReset,
   verifyResetCode,
@@ -10,6 +9,17 @@ import {
 } from '../../services/authApi';
 
 const RESEND_SECONDS = 60;
+const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+
+const STEP_TEXT = {
+  email: {
+    title: 'Reset your password',
+    intro: 'Enter the email on your account. We will send you a 6-digit code.',
+  },
+  code: { title: 'Enter the code', intro: null },
+  password: { title: 'Choose a new password', intro: null },
+  done: { title: 'Password updated', intro: 'You can sign in with your new password now.' },
+};
 
 /**
  * Same flow as the phone: email -> 6-digit code -> new password. The code is
@@ -19,7 +29,7 @@ const RESEND_SECONDS = 60;
 export default function ForgotPasswordPage() {
   const navigate = useNavigate();
 
-  const [step, setStep] = useState('email'); // email | code | password | done
+  const [step, setStep] = useState('email');
   const [email, setEmail] = useState('');
   const [code, setCode] = useState('');
   const [resetToken, setResetToken] = useState('');
@@ -49,7 +59,7 @@ export default function ForgotPasswordPage() {
       await requestPasswordReset(email.trim());
       setResendIn(RESEND_SECONDS);
       setStep('code');
-      setNotice(`If ${email.trim()} has an AgriFair account, a 6-digit code is on its way. Check Spam too.`);
+      setNotice(`If ${email.trim()} has an AgriFair account, a code is on its way. Check Spam too.`);
     } catch (err) {
       const data = err?.response?.data;
       if (data?.code === 'RESEND_COOLDOWN') {
@@ -66,14 +76,19 @@ export default function ForgotPasswordPage() {
 
   const handleEmailSubmit = (e) => {
     e.preventDefault();
-    if (!email.trim()) return setError('Email is required');
-    if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email.trim())) return setError('Invalid email format');
+    if (!EMAIL_RE.test(email.trim())) {
+      setError('Enter a valid email, like name@example.com.');
+      return;
+    }
     sendCode();
   };
 
   const handleCodeSubmit = async (e) => {
     e.preventDefault();
-    if (!/^\d{6}$/.test(code.trim())) return setError('Enter the 6-digit code from the email');
+    if (!/^\d{6}$/.test(code.trim())) {
+      setError('Enter the 6-digit code from the email.');
+      return;
+    }
 
     setLoading(true);
     setError('');
@@ -83,7 +98,7 @@ export default function ForgotPasswordPage() {
       setNotice('');
       setStep('password');
     } catch (err) {
-      setError(getErrorMessage(err, 'Could not verify that code.'));
+      setError(getErrorMessage(err, 'Could not check that code.'));
     } finally {
       setLoading(false);
     }
@@ -91,8 +106,14 @@ export default function ForgotPasswordPage() {
 
   const handlePasswordSubmit = async (e) => {
     e.preventDefault();
-    if (password.length < 6) return setError('Password must be at least 6 characters');
-    if (password !== confirm) return setError('Passwords do not match');
+    if (password.length < 6) {
+      setError('Use at least 6 characters.');
+      return;
+    }
+    if (password !== confirm) {
+      setError('The passwords do not match.');
+      return;
+    }
 
     setLoading(true);
     setError('');
@@ -116,212 +137,130 @@ export default function ForgotPasswordPage() {
     setNotice('');
   };
 
-  const submitLabel = (idle, busy) => (
-    <>
-      {loading ? busy : idle}
-      {!loading && <span className="auth-v2-submit-arrow">-&gt;</span>}
-    </>
-  );
+  const text = STEP_TEXT[step];
+  const intro = step === 'code'
+    ? (notice || <>Enter the 6-digit code we sent to <strong>{email}</strong>.</>)
+    : step === 'password'
+      ? <>Choose a new password for <strong>{email}</strong>.</>
+      : text.intro;
+
+  const errorLine = error && <span id="reset-error" className="field-error">{error}</span>;
 
   return (
-    <div className="auth-page-v2">
-      <div className="auth-form-side">
-        <Link to="/" className="auth-v2-brand" aria-label="Go to AgriFair home">
-          <img src={logoImg} alt="AgriFair Logo" className="auth-v2-brand-img" />
-          <span className="auth-v2-brand-text">AgriFair</span>
-        </Link>
+    <AuthLayout
+      brand={{
+        badge: 'Account recovery',
+        headline: <>Back to your<em>shop soon.</em></>,
+        text: 'We will email you a 6-digit code. Enter it here, choose a new password, and sign in again.',
+      }}
+      title={text.title}
+      intro={intro}
+      footer={step !== 'done' && <>Remembered it? <Link to="/login" className="link">Back to sign in</Link></>}
+    >
+      {step === 'email' && (
+        <form className="auth-form" onSubmit={handleEmailSubmit} noValidate>
+          <div className={`field${error ? ' has-error' : ''}`}>
+            <label className="field-label" htmlFor="email">Email</label>
+            <input
+              id="email"
+              className="input"
+              type="email"
+              name="email"
+              autoComplete="email"
+              spellCheck={false}
+              value={email}
+              onChange={(e) => {
+                setEmail(e.target.value);
+                setError('');
+              }}
+              aria-describedby={error ? 'reset-error' : undefined}
+            />
+            {errorLine}
+          </div>
+          <button type="submit" className="btn btn-primary btn-lg btn-block" disabled={loading}>
+            {loading ? 'Sending…' : 'Send code'}
+          </button>
+        </form>
+      )}
 
-        <div className="auth-form-body">
-          <div className="auth-v2-label">Password Recovery</div>
-
-          {step === 'email' && (
-            <>
-              <h1 className="auth-v2-title">Forgot password?</h1>
-              <p className="auth-v2-subtitle">
-                Enter the email on your account and we will send you a 6-digit reset code.
-              </p>
-
-              <form className="auth-v2-form" onSubmit={handleEmailSubmit} noValidate>
-                <div className={`auth-v2-field ${error ? 'has-error' : ''}`}>
-                  <label htmlFor="email">Email address</label>
-                  <div className="auth-v2-input-wrap">
-                    <span className="auth-v2-input-icon">ID</span>
-                    <input
-                      id="email"
-                      type="email"
-                      name="email"
-                      value={email}
-                      onChange={(e) => {
-                        setEmail(e.target.value);
-                        setError('');
-                      }}
-                      placeholder="you@email.com"
-                      autoComplete="email"
-                      disabled={loading}
-                    />
-                  </div>
-                  {error && <span className="auth-v2-error">{error}</span>}
-                </div>
-
-                <button type="submit" className="auth-v2-submit" disabled={loading}>
-                  {submitLabel('Send Reset Code', 'Sending...')}
-                </button>
-              </form>
-            </>
-          )}
-
-          {step === 'code' && (
-            <>
-              <h1 className="auth-v2-title">Check your email.</h1>
-              <p className="auth-v2-subtitle">
-                {notice || <>Enter the 6-digit code sent to <strong>{email}</strong>.</>}
-              </p>
-
-              <form className="auth-v2-form" onSubmit={handleCodeSubmit} noValidate>
-                <div className={`auth-v2-field ${error ? 'has-error' : ''}`}>
-                  <label htmlFor="code">Reset code</label>
-                  <div className="auth-v2-input-wrap">
-                    <span className="auth-v2-input-icon">#</span>
-                    <input
-                      id="code"
-                      name="code"
-                      inputMode="numeric"
-                      autoComplete="one-time-code"
-                      maxLength={6}
-                      value={code}
-                      onChange={(e) => {
-                        setCode(e.target.value.replace(/\D/g, ''));
-                        setError('');
-                      }}
-                      placeholder="123456"
-                      disabled={loading}
-                      autoFocus
-                    />
-                  </div>
-                  {error && <span className="auth-v2-error">{error}</span>}
-                </div>
-
-                <button type="submit" className="auth-v2-submit" disabled={loading}>
-                  {submitLabel('Verify Code', 'Checking...')}
-                </button>
-              </form>
-
-              <p className="auth-v2-footer-note">
-                Didn&apos;t get it?{' '}
-                {resendIn > 0 ? (
-                  <span>Resend in {resendIn}s</span>
-                ) : (
-                  <button
-                    type="button"
-                    className="auth-v2-inline-link"
-                    onClick={sendCode}
-                    disabled={loading}
-                    style={{ background: 'none', border: 0, padding: 0, cursor: 'pointer', font: 'inherit' }}
-                  >
-                    Resend code
-                  </button>
-                )}
-                {' · '}
-                <button
-                  type="button"
-                  className="auth-v2-inline-link"
-                  onClick={startOver}
-                  style={{ background: 'none', border: 0, padding: 0, cursor: 'pointer', font: 'inherit' }}
-                >
-                  Use a different email
-                </button>
-              </p>
-            </>
-          )}
-
-          {step === 'password' && (
-            <>
-              <h1 className="auth-v2-title">Set a new password.</h1>
-              <p className="auth-v2-subtitle">
-                Choose a new password for <strong>{email}</strong>.
-              </p>
-
-              <form className="auth-v2-form" onSubmit={handlePasswordSubmit} noValidate>
-                <div className="auth-v2-field">
-                  <label htmlFor="new-password">New password</label>
-                  <div className="auth-v2-input-wrap">
-                    <span className="auth-v2-input-icon">PW</span>
-                    <input
-                      id="new-password"
-                      type="password"
-                      autoComplete="new-password"
-                      value={password}
-                      onChange={(e) => {
-                        setPassword(e.target.value);
-                        setError('');
-                      }}
-                      placeholder="At least 6 characters"
-                      disabled={loading}
-                      autoFocus
-                    />
-                  </div>
-                </div>
-
-                <div className={`auth-v2-field ${error ? 'has-error' : ''}`}>
-                  <label htmlFor="confirm-password">Confirm password</label>
-                  <div className="auth-v2-input-wrap">
-                    <span className="auth-v2-input-icon">PW</span>
-                    <input
-                      id="confirm-password"
-                      type="password"
-                      autoComplete="new-password"
-                      value={confirm}
-                      onChange={(e) => {
-                        setConfirm(e.target.value);
-                        setError('');
-                      }}
-                      placeholder="Type it again"
-                      disabled={loading}
-                    />
-                  </div>
-                  {error && <span className="auth-v2-error">{error}</span>}
-                </div>
-
-                <button type="submit" className="auth-v2-submit" disabled={loading}>
-                  {submitLabel('Update Password', 'Saving...')}
-                </button>
-              </form>
-            </>
-          )}
-
-          {step === 'done' && (
-            <>
-              <h1 className="auth-v2-title">Password updated.</h1>
-              <p className="auth-v2-subtitle">You can sign in with your new password now.</p>
-              <button type="button" className="auth-v2-submit" onClick={() => navigate('/login')}>
-                Back to Sign In <span className="auth-v2-submit-arrow">-&gt;</span>
-              </button>
-            </>
-          )}
-
-          {step !== 'done' && (
-            <p className="auth-v2-footer-note">
-              Remember your password?{' '}
-              <Link to="/login" className="auth-v2-inline-link">Back to sign in</Link>
-            </p>
-          )}
-        </div>
-      </div>
-
-      <div className="auth-brand-side">
-        <div className="auth-brand-side-bg" />
-        <div className="auth-brand-side-content">
-          <div className="auth-brand-badge">Account Recovery</div>
-          <h2 className="auth-brand-headline">
-            Back in
-            <br />
-            control soon.
-          </h2>
-          <p className="auth-brand-desc">
-            Reset your access securely and return to managing AgriFair operations.
+      {step === 'code' && (
+        <form className="auth-form" onSubmit={handleCodeSubmit} noValidate>
+          <div className={`field${error ? ' has-error' : ''}`}>
+            <label className="field-label" htmlFor="code">6-digit code</label>
+            <input
+              id="code"
+              className="input input-code"
+              name="code"
+              inputMode="numeric"
+              autoComplete="one-time-code"
+              spellCheck={false}
+              maxLength={6}
+              value={code}
+              onChange={(e) => {
+                setCode(e.target.value.replace(/\D/g, ''));
+                setError('');
+              }}
+              aria-describedby={error ? 'reset-error' : undefined}
+            />
+            {errorLine}
+          </div>
+          <button type="submit" className="btn btn-primary btn-lg btn-block" disabled={loading}>
+            {loading ? 'Checking…' : 'Continue'}
+          </button>
+          <p className="auth-alt">
+            {resendIn > 0
+              ? <>You can ask for a new code in {resendIn}s.</>
+              : <button type="button" className="link" onClick={sendCode} disabled={loading}>Send a new code</button>}
+            {' or '}
+            <button type="button" className="link" onClick={startOver}>use a different email</button>.
           </p>
-        </div>
-      </div>
-    </div>
+        </form>
+      )}
+
+      {step === 'password' && (
+        <form className="auth-form" onSubmit={handlePasswordSubmit} noValidate>
+          <div className="field">
+            <label className="field-label" htmlFor="new-password">New password</label>
+            <input
+              id="new-password"
+              className="input"
+              type="password"
+              autoComplete="new-password"
+              value={password}
+              onChange={(e) => {
+                setPassword(e.target.value);
+                setError('');
+              }}
+            />
+            <span className="field-hint">At least 6 characters.</span>
+          </div>
+          <div className={`field${error ? ' has-error' : ''}`}>
+            <label className="field-label" htmlFor="confirm-password">Confirm new password</label>
+            <input
+              id="confirm-password"
+              className="input"
+              type="password"
+              autoComplete="new-password"
+              value={confirm}
+              onChange={(e) => {
+                setConfirm(e.target.value);
+                setError('');
+              }}
+              aria-describedby={error ? 'reset-error' : undefined}
+            />
+            {errorLine}
+          </div>
+          <button type="submit" className="btn btn-primary btn-lg btn-block" disabled={loading}>
+            {loading ? 'Saving…' : 'Update password'}
+          </button>
+        </form>
+      )}
+
+      {step === 'done' && (
+        <button type="button" className="btn btn-primary btn-lg btn-block auth-resend" onClick={() => navigate('/login')}>
+          Sign in
+        </button>
+      )}
+    </AuthLayout>
   );
 }

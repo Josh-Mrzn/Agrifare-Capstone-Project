@@ -2,8 +2,9 @@ import React, { useEffect, useState, useCallback, useRef, useMemo } from 'react'
 import { MapContainer, TileLayer, Marker, Popup, Polyline, useMap } from 'react-leaflet';
 import L from 'leaflet';
 import 'leaflet/dist/leaflet.css';
-import { MapPin, Navigation, Truck, RefreshCw, Store, Home } from 'lucide-react';
+import { Navigation, Store } from 'lucide-react';
 import API from '../../../services/authApi';
+import { formatTime } from '../../../utils/format';
 import { updateAccount } from '../../../services/userApi';
 import './DeliveryMap.css';
 
@@ -51,7 +52,7 @@ function FitRoute({ points }) {
   return null;
 }
 
-export default function DeliveryMap({ orderId, orderNumber, canUpdate }) {
+export default function DeliveryMap({ orderId, canUpdate }) {
   const [tracking, setTracking] = useState(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
@@ -64,7 +65,7 @@ export default function DeliveryMap({ orderId, orderNumber, canUpdate }) {
       setTracking(res.data);
       setError('');
     } catch (err) {
-      setError(err.response?.data?.error || 'Could not load tracking.');
+      setError(err.response?.data?.error || 'Could not load the map.');
     } finally {
       setLoading(false);
     }
@@ -153,7 +154,7 @@ export default function DeliveryMap({ orderId, orderNumber, canUpdate }) {
     return list;
   }, [hasPickup, hasCourier, hasDropoff, pickup, dropoff, tracking]);
 
-  if (loading) return <div className="dm-skeleton" />;
+  if (loading) return <div className="skeleton" style={{ height: 320 }} />;
 
   // A barangay centre is not a front door, and the map must not imply it is.
   const approximate = dropoff?.precision === 'approximate';
@@ -164,49 +165,30 @@ export default function DeliveryMap({ orderId, orderNumber, canUpdate }) {
   ].filter(Boolean);
 
   return (
-    <div className="dm-root">
-      <div className="dm-head">
-        <div>
-          <span className="ap-panel-tag">Live delivery</span>
-          <h2>Where {orderNumber} is now</h2>
-        </div>
+    <section className="panel">
+      <div className="panel-head">
+        <h3>Map</h3>
         {canUpdate && (
-          <div className="dm-actions">
+          <div className="panel-head-actions">
             {!hasPickup && (
-              <button
-                className="ap-btn-ghost ap-btn-sm"
-                type="button"
-                onClick={pinMyShop}
-                disabled={pinningShop}
-              >
-                <Store size={14} strokeWidth={2.3} />
-                {pinningShop ? 'Saving…' : 'Pin my shop'}
+              <button className="btn btn-secondary btn-sm" type="button" onClick={pinMyShop} disabled={pinningShop}>
+                <Store size={14} aria-hidden="true" />
+                {pinningShop ? 'Saving…' : 'Pin my shop here'}
               </button>
             )}
-            <button
-              className="ap-btn-ghost ap-btn-sm"
-              type="button"
-              onClick={shareMyLocation}
-              disabled={sending}
-            >
-              <Navigation size={14} strokeWidth={2.3} />
+            <button className="btn btn-secondary btn-sm" type="button" onClick={shareMyLocation} disabled={sending}>
+              <Navigation size={14} aria-hidden="true" />
               {sending ? 'Sending…' : 'Share my location'}
             </button>
           </div>
         )}
       </div>
+      <div className="panel-body stack">
 
-      {error && <p className="ap-form-error">{error}</p>}
+      {error && <p className="alert alert-danger">{error}</p>}
 
-      {!tracking?.isLive && (
-        <div className="dm-notice">
-          <Truck size={16} strokeWidth={2.2} />
-          <span>
-            {tracking?.status === 'shipped' || tracking?.status === 'delivered'
-              ? 'No position shared yet. Tap "Share my location" while you are on the way.'
-              : 'Live tracking starts once you mark this order as shipped.'}
-          </span>
-        </div>
+      {!tracking?.isLive && tracking?.status === 'shipped' && (
+        <p className="muted">No live position yet. It appears when the rider shares their location.</p>
       )}
 
       {points.length > 0 ? (
@@ -221,12 +203,12 @@ export default function DeliveryMap({ orderId, orderNumber, canUpdate }) {
               {points.length > 1 && (
                 // Dashed: this is the line between two places, not the road a
                 // rider will actually take.
-                <Polyline positions={points} pathOptions={{ color: '#4A7C59', weight: 3, dashArray: '7 6' }} />
+                <Polyline positions={points} pathOptions={{ color: '#2c6b45', weight: 3, dashArray: '7 6' }} />
               )}
 
               {hasPickup && (
                 <Marker position={[pickup.lat, pickup.lng]} icon={shopIcon}>
-                  <Popup>Picked up here{pickup.address ? ` — ${pickup.address}` : ''}</Popup>
+                  <Popup>Pickup{pickup.address ? `: ${pickup.address}` : ''}</Popup>
                 </Marker>
               )}
 
@@ -234,7 +216,7 @@ export default function DeliveryMap({ orderId, orderNumber, canUpdate }) {
                 <Marker position={[dropoff.lat, dropoff.lng]} icon={doorIcon}>
                   <Popup>
                     {approximate ? 'Barangay of the delivery address' : 'Deliver here'}
-                    {dropoff.address ? ` — ${dropoff.address}` : ''}
+                    {dropoff.address ? `: ${dropoff.address}` : ''}
                   </Popup>
                 </Marker>
               )}
@@ -243,7 +225,7 @@ export default function DeliveryMap({ orderId, orderNumber, canUpdate }) {
                 <Marker position={[tracking.lat, tracking.lng]} icon={riderIcon}>
                   <Popup>
                     {tracking.courierName || 'Courier'}
-                    {tracking.etaMinutes != null && <> · about {tracking.etaMinutes} min away</>}
+                    {tracking.etaMinutes != null && <>, about {tracking.etaMinutes} min away</>}
                   </Popup>
                 </Marker>
               )}
@@ -252,53 +234,31 @@ export default function DeliveryMap({ orderId, orderNumber, canUpdate }) {
             </MapContainer>
           </div>
 
-          <div className="dm-legs">
-            <span className="dm-leg">
-              <i className="dm-dot dm-dot--shop" />
-              <Store size={13} strokeWidth={2.3} />
-              {hasPickup ? pickup.address || 'Pinned shop' : 'Pickup point not set'}
-            </span>
-            <span className="dm-leg">
-              <i className="dm-dot dm-dot--door" />
-              <Home size={13} strokeWidth={2.3} />
-              {dropoff?.address || 'No address on this order'}
-            </span>
-            {approximate && (
-              <span className="dm-approx">
-                The delivery pin is the barangay, not the door. Follow the written
-                address and landmark from there.
-              </span>
+          <ul className="dm-legend">
+            <li><i className="dm-dot dm-dot--shop" aria-hidden="true" />{hasPickup ? pickup.address || 'Your shop' : 'Pickup point not set'}</li>
+            <li><i className="dm-dot dm-dot--door" aria-hidden="true" />{dropoff?.address || 'No address on this order'}</li>
+            {hasCourier && (
+              <li>
+                <i className="dm-dot dm-dot--rider" aria-hidden="true" />
+                {tracking.courierName || 'Rider'}
+                {tracking?.updatedAt ? `, seen ${formatTime(tracking.updatedAt)}` : ''}
+                {tracking?.etaMinutes != null ? `, about ${tracking.etaMinutes} min away` : ''}
+              </li>
             )}
-          </div>
+          </ul>
 
-          {missing.length > 0 && (
-            <p className="dm-gap">
-              The map is incomplete because {missing.join(' and ')}.
-            </p>
+          {approximate && (
+            <p className="muted">The delivery pin marks the barangay, not the door. Follow the written address from there.</p>
           )}
-
-          <div className="dm-meta">
-            {tracking?.updatedAt && (
-              <span>
-                <RefreshCw size={13} strokeWidth={2.3} />
-                Updated {new Date(tracking.updatedAt).toLocaleTimeString('en-PH', {
-                  hour: 'numeric',
-                  minute: '2-digit',
-                })}
-              </span>
-            )}
-            {tracking?.etaMinutes != null && <span>ETA {tracking.etaMinutes} min</span>}
-          </div>
+          {missing.length > 0 && <p className="muted">The map is incomplete because {missing.join(' and ')}.</p>}
         </>
       ) : (
-        <div className="dm-empty">
-          <MapPin size={26} strokeWidth={1.6} />
-          <p>
-            Nothing to map yet — {missing.join(', and ')}.
-            {canUpdate && !hasPickup && ' Tap "Pin my shop" while you are at it.'}
-          </p>
-        </div>
+        <p className="muted">
+          Nothing to show on the map yet: {missing.join(', and ')}.
+          {canUpdate && !hasPickup && ' Use "Pin my shop here" while you are at your shop.'}
+        </p>
       )}
-    </div>
+      </div>
+    </section>
   );
 }
