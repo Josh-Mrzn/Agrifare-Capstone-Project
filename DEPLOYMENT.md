@@ -45,7 +45,11 @@ Do the steps in this order: you need the database URL before the API, the API's 
 
 ## 4. Android app
 
-The app does not look for a server: the API URL is compiled into it. Build it once the API is live. You need Flutter and the Android SDK on your computer.
+The app does not look for a server: the API URL is compiled into it.
+
+**Easiest: GitHub builds it.** `.github/workflows/build-apk.yml` builds the APK against `https://agrifair-api.onrender.com/api` whenever `mobile/` changes on `main`, and commits it to `frontend/public/downloads/AgriFair.apk`. To rebuild by hand, or for a different API URL, open GitHub → **Actions** → **Build Android APK** → **Run workflow**.
+
+**Or build on your computer.** You need Flutter and the Android SDK.
 
 ```powershell
 cd mobile
