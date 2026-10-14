@@ -88,8 +88,7 @@ const orderSchema = new mongoose.Schema({
   },
   paymentMethod: {
     type: String,
-    // 'PayMongo' only so older orders that carry it still save. It is never
-    // offered: orderRules.PAYMENT_METHODS is what new orders may use.
+    // 'PayMongo' is the sandbox gateway demo (services/paymongoService.js).
     enum: ['Cash/COD', 'GCash', 'PayMongo'],
     default: 'Cash/COD',
   },
@@ -185,6 +184,8 @@ const orderSchema = new mongoose.Schema({
     default: 'unpaid',
   },
   paymentProof: { type: String, default: '' },
+  /** The PayMongo checkout session this order is paid through, if any. */
+  paymongoCheckoutId: { type: String, default: '' },
   paymentReference: { type: String, trim: true, default: '' },
   paymentNote: { type: String, trim: true, default: '' },
   amountPaid: { type: Number, default: 0, min: 0 },
@@ -262,6 +263,7 @@ const orderSchema = new mongoose.Schema({
 orderSchema.index({ sellerId: 1, orderDate: -1 });
 orderSchema.index({ status: 1 });
 orderSchema.index({ paymentReference: 1 }, { sparse: true });
+orderSchema.index({ paymongoCheckoutId: 1 }, { sparse: true });
 
 const Order = mongoose.model('Order', orderSchema);
 export default Order;

@@ -4,6 +4,7 @@ import Product from '../models/Product.js';
 import Order from '../models/Order.js';
 import { findUserByUserId } from '../repositories/userRepository.js';
 import { postOrderSystemMessage } from './chatService.js';
+import * as paymongo from './paymongoService.js';
 import { isSellerSuspended, suspendedSellerIds } from './sellerAvailability.js';
 import User from '../models/User.js';
 import {
@@ -198,7 +199,10 @@ export const checkout = async (buyerUserId, {
 }) => {
   const method = paymentMethod || 'Cash/COD';
   if (!PAYMENT_METHODS.includes(method)) {
-    throw new Error(`Choose a payment method: ${PAYMENT_METHODS.join(' or ')}.`);
+    throw new Error(`Choose a payment method: ${PAYMENT_METHODS.join(', ')}.`);
+  }
+  if (method === 'PayMongo' && !paymongo.isConfigured()) {
+    throw new Error('Online payment is not available right now. Choose cash on delivery or GCash.');
   }
 
   const cart = await cartRepo.getOrCreate(buyerUserId);
@@ -349,9 +353,21 @@ export const checkout = async (buyerUserId, {
     });
   }
 
+  // The orders exist either way. If PayMongo is down, the buyer can open the
+  // order and press "Pay now" again instead of losing the basket.
+  let checkoutUrl = null;
+  if (method === 'PayMongo') {
+    try {
+      ({ checkoutUrl } = await paymongo.startPayment(buyerUserId, groupId));
+    } catch (err) {
+      console.error('[checkout] PayMongo session failed:', err.message);
+    }
+  }
+
   return {
     orderNumber,
     groupId,
+    checkoutUrl,
     itemCount: orders.length,
     total: orders.reduce((sum, o) => sum + Number(o.total), 0),
     paymentMethod: method,

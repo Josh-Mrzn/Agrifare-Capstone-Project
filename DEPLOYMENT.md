@@ -62,6 +62,21 @@ The script builds a release APK and copies it to `frontend/public/downloads/Agri
 
 Rebuild the APK whenever the API URL changes. The current `AgriFair.apk` in the repository was built before hosting, so replace it.
 
+## 5. Online payment: PayMongo sandbox (optional)
+
+A payment gateway demo. In test mode PayMongo shows its real checkout page (GCash, Maya, card), but no money moves. Present it as **payment gateway integration (sandbox)**. Cash on delivery and paying the seller's GCash directly are the app's real payment methods.
+
+1. Sign up at dashboard.paymongo.com. Test mode works right away; no business documents needed.
+2. Go to **Developers → API Keys** and copy the **secret** test key (`sk_test_...`). Never use the public key here.
+3. On Render, set `PAYMONGO_SECRET_KEY` to it. Render redeploys.
+4. Optional webhook, so payments are recorded even if the buyer never returns to the app: in **Developers → Webhooks**, add `https://<your-service>.onrender.com/api/payments/paymongo/webhook` with the event `checkout_session.payment.paid`. Copy its secret (`whsk_...`) into `PAYMONGO_WEBHOOK_SECRET` on Render.
+
+How it runs:
+1. In the app, the buyer chooses **Pay online (PayMongo sandbox)** and places the order.
+2. PayMongo's page opens. The buyer picks GCash or Maya and taps **Authorize Test Payment**, or pays by card with test card `4343 4343 4343 4345`, any future expiry date and any CVC.
+3. PayMongo returns the buyer to `<APP_URL>/payment/done`, which sends them back to the app.
+4. The app asks the server, which asks PayMongo, and the order shows **Paid**. The seller is notified and can accept it. Sellers can't accept a PayMongo order before it's paid.
+
 ## Checklist after deploying
 
 - [ ] `https://<api>/api` answers.

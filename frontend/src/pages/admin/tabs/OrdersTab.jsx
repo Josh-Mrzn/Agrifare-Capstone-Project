@@ -6,7 +6,7 @@ import Modal from '../../../components/Modal';
 import { fetchMyOrders, fetchMyProducts, recordSale } from '../../../services/clientApi';
 import { getErrorMessage } from '../../../services/authApi';
 import { wholePeso, peso, number, formatDate, quantityLabel } from '../../../utils/format';
-import { STATUS_LABEL, statusBadge, PAYMENT_LABEL, paymentBadge } from '../orderStatus';
+import { STATUS_LABEL, statusBadge, PAYMENT_LABEL, paymentBadge, METHOD_LABEL } from '../orderStatus';
 
 const FILTERS = [
   { id: 'all', label: 'All' },
@@ -126,7 +126,7 @@ export default function OrdersTab() {
                     <td data-label="Payment">
                       <span className="cell-main">
                         <span className={paymentBadge(o.paymentStatus)}>{PAYMENT_LABEL[o.paymentStatus] || 'Unpaid'}</span>
-                        <span>{o.paymentMethod}</span>
+                        <span>{METHOD_LABEL[o.paymentMethod] || o.paymentMethod}</span>
                       </span>
                     </td>
                     <td data-label="Status"><span className={statusBadge(o.status)}>{STATUS_LABEL[o.status] || o.status}</span></td>

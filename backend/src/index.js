@@ -9,6 +9,7 @@ import mongoose from 'mongoose';
 import cookieParser from 'cookie-parser';
 import cors from 'cors';
 import chatRoutes from './routes/chatRoutes.js';
+import paymongoWebhook from './routes/paymongoWebhook.js';
 import { findStored, sendStored } from './middleware/multerMiddleware.js';
 import { isVercelOrigin } from './utils/corsOrigins.js';
 
@@ -58,6 +59,8 @@ app.use(cors({
 app.get('/test', (req, res) => res.send('Server is alive!'));
 
 // ====================== MIDDLEWARE ======================
+// Before express.json(): the webhook signature covers the raw body.
+app.use('/api/payments/paymongo/webhook', paymongoWebhook);
 app.use(express.json());
 app.use(cookieParser());
 // Public uploads (product photos, avatars). Credentials are in the private

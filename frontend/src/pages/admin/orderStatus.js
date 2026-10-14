@@ -32,6 +32,13 @@ export const PAYMENT_LABEL = {
   rejected: 'Not received',
 };
 
+/** How each payment method reads to a seller. PayMongo runs in test mode. */
+export const METHOD_LABEL = {
+  'Cash/COD': 'Cash on delivery',
+  GCash: 'GCash',
+  PayMongo: 'PayMongo (sandbox)',
+};
+
 const PAYMENT_TONE = { unpaid: '', proof_sent: 'warning', paid: 'success', rejected: 'danger' };
 
 export const paymentBadge = (status) => `badge${PAYMENT_TONE[status] ? ` badge-${PAYMENT_TONE[status]}` : ''}`;

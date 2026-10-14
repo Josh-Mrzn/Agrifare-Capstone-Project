@@ -12,7 +12,7 @@ import {
 } from '../../../services/clientApi';
 import { getErrorMessage } from '../../../services/authApi';
 import { peso, formatDateTime, quantityLabel } from '../../../utils/format';
-import { STATUS_LABEL, statusBadge, PAYMENT_LABEL, paymentBadge } from '../orderStatus';
+import { STATUS_LABEL, statusBadge, PAYMENT_LABEL, paymentBadge, METHOD_LABEL } from '../orderStatus';
 
 const BUYER_CONFIRM_DAYS = 3;
 const DAY = 24 * 60 * 60 * 1000;
@@ -31,6 +31,12 @@ function nextStep(order) {
 
   switch (order.status) {
     case 'pending':
+      if (order.paymentMethod === 'PayMongo' && order.paymentStatus !== 'paid') {
+        return {
+          text: 'Waiting for the buyer to pay online (PayMongo sandbox). It is marked paid automatically, then you can accept it.',
+          actions: [{ to: 'confirmed', label: 'Accept order', blocked: true }, { to: 'cancelled', label: 'Decline', ghost: true }],
+        };
+      }
       if (isGcash(order.paymentMethod) && order.paymentStatus !== 'paid') {
         return {
           text: 'Check the GCash payment below first. You can accept the order once the money has arrived.',
@@ -359,7 +365,9 @@ function PaymentSection({ order, busy, act, onView }) {
   const gcash = isGcash(order.paymentMethod);
   // GCash: once there is a receipt to check. Cash: once the rice is on its
   // way, which is when the money is actually handed over.
+  // PayMongo: the gateway confirms it, never the seller by hand.
   const canReview = order.status !== 'cancelled' && order.paymentStatus !== 'paid'
+    && order.paymentMethod !== 'PayMongo'
     && (gcash ? Boolean(order.paymentProof) : ['shipped', 'delivered', 'completed'].includes(order.status));
   const history = order.paymentHistory || [];
 
@@ -385,7 +393,7 @@ function PaymentSection({ order, busy, act, onView }) {
             <div><dt>Rice</dt><dd className="num">{peso(order.subtotal ?? order.total)}</dd></div>
             <div><dt>Delivery</dt><dd className="num">{peso(order.deliveryFee || 0)}</dd></div>
             <div className="totals-sum"><dt>Total</dt><dd className="num">{peso(order.total)}</dd></div>
-            <div><dt>Method</dt><dd>{order.paymentMethod === 'Cash/COD' ? 'Cash on delivery' : order.paymentMethod}</dd></div>
+            <div><dt>Method</dt><dd>{METHOD_LABEL[order.paymentMethod] || order.paymentMethod}</dd></div>
             {order.paymentReference && <div><dt>Reference</dt><dd className="num">{order.paymentReference}</dd></div>}
             {order.paymentStatus === 'paid' && (
               <div><dt>Received</dt><dd>{peso(order.amountPaid)} on {formatDateTime(order.paidAt)}</dd></div>

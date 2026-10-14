@@ -1,5 +1,6 @@
 import 'package:cached_network_image/cached_network_image.dart';
 import 'package:flutter/material.dart';
+import 'package:url_launcher/url_launcher.dart';
 
 import '../models/order.dart';
 import '../services/api_client.dart';
@@ -19,10 +20,108 @@ class OrderDetailScreen extends StatefulWidget {
   State<OrderDetailScreen> createState() => _OrderDetailScreenState();
 }
 
-class _OrderDetailScreenState extends State<OrderDetailScreen> {
+class _OrderDetailScreenState extends State<OrderDetailScreen>
+    with WidgetsBindingObserver {
   late OrderGroup _order = widget.order;
   bool _cancelling = false;
   bool _confirming = false;
+  bool _paying = false;
+
+  /// An online (PayMongo sandbox) order the buyer still has to pay.
+  bool get _awaitsOnlinePayment =>
+      _order.paymentMethod == 'PayMongo' &&
+      _order.paymentStatus != 'paid' &&
+      _order.status != 'cancelled';
+
+  @override
+  void initState() {
+    super.initState();
+    WidgetsBinding.instance.addObserver(this);
+    // Opened straight after paying in the browser: ask PayMongo now.
+    if (_awaitsOnlinePayment) _checkPayment(quiet: true);
+  }
+
+  @override
+  void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
+    super.dispose();
+  }
+
+  /// Back from PayMongo's page in the browser.
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    if (state == AppLifecycleState.resumed && _awaitsOnlinePayment) {
+      _checkPayment(quiet: true);
+    }
+  }
+
+  Future<void> _payOnline() async {
+    setState(() => _paying = true);
+    try {
+      final url = await OrderService.instance.startOnlinePayment(_order.groupId);
+      await launchUrl(Uri.parse(url), mode: LaunchMode.externalApplication);
+    } on ApiException catch (err) {
+      _notify(err.message);
+    } finally {
+      if (mounted) setState(() => _paying = false);
+    }
+  }
+
+  Future<void> _checkPayment({bool quiet = false}) async {
+    if (_paying) return;
+    setState(() => _paying = true);
+    try {
+      final paid = await OrderService.instance.verifyOnlinePayment(_order.groupId);
+      if (!mounted) return;
+      if (paid) {
+        await _refresh();
+        _notify('Payment confirmed by PayMongo.');
+      } else if (!quiet) {
+        _notify('No payment yet. Finish paying on the PayMongo page, then check again.');
+      }
+    } on ApiException catch (err) {
+      if (!quiet) _notify(err.message);
+    } finally {
+      if (mounted) setState(() => _paying = false);
+    }
+  }
+
+  Widget _onlinePaymentCard() {
+    return ClayCard(
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          const Text(
+            'Waiting for your online payment',
+            style: TextStyle(
+              fontSize: 15,
+              fontWeight: FontWeight.w700,
+              color: AppColors.textDark,
+            ),
+          ),
+          const SizedBox(height: 6),
+          const Text(
+            'The seller can accept your order once PayMongo confirms the '
+            'payment. Sandbox demo: no real money is charged.',
+            style: TextStyle(fontSize: 12.5, color: AppColors.textBody, height: 1.4),
+          ),
+          const SizedBox(height: 14),
+          ClayButton(
+            label: 'Pay now',
+            icon: Icons.credit_card_rounded,
+            isLoading: _paying,
+            onPressed: _paying ? null : _payOnline,
+          ),
+          const SizedBox(height: 10),
+          ClayButton(
+            label: 'I have paid — check again',
+            filled: false,
+            onPressed: _paying ? null : () => _checkPayment(),
+          ),
+        ],
+      ),
+    );
+  }
 
   Future<void> _confirmReceived() async {
     setState(() => _confirming = true);
@@ -157,6 +256,10 @@ class _OrderDetailScreenState extends State<OrderDetailScreen> {
           padding: const EdgeInsets.fromLTRB(18, 8, 18, 32),
           children: [
             _statusCard(),
+            if (_awaitsOnlinePayment) ...[
+              const SizedBox(height: 16),
+              _onlinePaymentCard(),
+            ],
 
             // The map goes above the receipt: once the rice is on the road,
             // where it is matters more than what it cost.
@@ -411,7 +514,7 @@ class _OrderDetailScreenState extends State<OrderDetailScreen> {
                 ),
                 const SizedBox(width: 7),
                 Text(
-                  _order.paymentMethod,
+                  _order.paymentMethod == 'PayMongo' ? 'PayMongo (sandbox)' : _order.paymentMethod,
                   style: const TextStyle(
                     fontSize: 12.5,
                     color: AppColors.textMuted,

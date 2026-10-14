@@ -30,3 +30,7 @@ services:
         sync: false
       - key: MAIL_FROM
         sync: false
+      - key: PAYMONGO_SECRET_KEY
+        sync: false
+      - key: PAYMONGO_WEBHOOK_SECRET
+        sync: false

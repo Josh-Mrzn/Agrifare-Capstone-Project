@@ -3,6 +3,7 @@ import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:image_picker/image_picker.dart';
+import 'package:url_launcher/url_launcher.dart';
 
 import '../models/address.dart';
 import '../models/cart.dart';
@@ -186,6 +187,19 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
       final total = cart.total;
       cart.clear();
 
+      // PayMongo's own page, in the browser. The order is saved already, so
+      // a closed tab or a failed launch only means "Pay now" on the order.
+      final checkoutUrl = result.checkoutUrl;
+      if (checkoutUrl != null) {
+        await launchUrl(
+          Uri.parse(checkoutUrl),
+          mode: LaunchMode.externalApplication,
+        );
+        if (!mounted) return;
+      } else if (_method == PaymentMethod.paymongo) {
+        _notify('Order placed. Open it under Orders and tap Pay now to pay.');
+      }
+
       Navigator.of(context).pushAndRemoveUntil(
         MaterialPageRoute(
           builder: (_) => OrderSuccessScreen(
@@ -349,6 +363,18 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
             const Divider(height: 1),
             const SizedBox(height: 14),
             _gcashPanel(),
+          ],
+          if (_method == PaymentMethod.paymongo) ...[
+            const SizedBox(height: 14),
+            const Divider(height: 1),
+            const SizedBox(height: 14),
+            const Text(
+              'After you place the order, PayMongo\'s payment page opens. '
+              'Choose GCash, Maya or card there.\n\n'
+              'Sandbox demo: this is a test payment gateway. No real money '
+              'is charged — tap "Authorize Test Payment" on the PayMongo page.',
+              style: TextStyle(fontSize: 12.5, color: AppColors.textBody, height: 1.4),
+            ),
           ],
         ],
       ),
@@ -754,9 +780,11 @@ class _MethodRow extends StatelessWidget {
         child: Row(
           children: [
             Icon(
-              method == PaymentMethod.gcash
-                  ? Icons.qr_code_rounded
-                  : Icons.payments_rounded,
+              switch (method) {
+                PaymentMethod.gcash => Icons.qr_code_rounded,
+                PaymentMethod.paymongo => Icons.credit_card_rounded,
+                PaymentMethod.cashOnDelivery => Icons.payments_rounded,
+              },
               size: 19,
               color: selected ? AppColors.primaryMedium : AppColors.textMuted,
             ),

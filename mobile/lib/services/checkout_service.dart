@@ -2,15 +2,25 @@ import 'api_client.dart';
 
 /// What comes back when an order is placed.
 class PlacedOrder {
-  const PlacedOrder({required this.orderNumber, required this.groupId});
+  const PlacedOrder({
+    required this.orderNumber,
+    required this.groupId,
+    this.checkoutUrl,
+  });
 
   final String orderNumber;
   final String groupId;
 
+  /// PayMongo's checkout page, for an order paid online. Null otherwise, or
+  /// when PayMongo could not be reached - the order then offers "Pay now".
+  final String? checkoutUrl;
+
   factory PlacedOrder.fromJson(Map<String, dynamic> json) {
+    final url = json['checkoutUrl'];
     return PlacedOrder(
       orderNumber: (json['orderNumber'] ?? '').toString(),
       groupId: (json['groupId'] ?? '').toString(),
+      checkoutUrl: url is String && url.isNotEmpty ? url : null,
     );
   }
 }

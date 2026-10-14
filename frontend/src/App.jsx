@@ -12,6 +12,7 @@ const AdminPage = lazy(() => import('./pages/admin/AdminPage.jsx'));
 const SuperAdminPage = lazy(() => import('./pages/superadmin/SuperAdminPage.jsx'));
 const RiderPage = lazy(() => import('./pages/rider/RiderPage.jsx'));
 const ActivatePage = lazy(() => import('./pages/rider/ActivatePage.jsx'));
+const PaymentReturnPage = lazy(() => import('./pages/PaymentReturnPage.jsx'));
 import { getHomePath, getSessionUser, getToken } from './utils/auth.js';
 
 const getAuth = () => ({ token: getToken(), user: getSessionUser() });
@@ -79,6 +80,10 @@ export default function App() {
             from the emailed link. Open to everyone: the token is the key, and
             a signed-in session on this browser has nothing to do with it. */}
         <Route path="/activate" element={<ActivatePage />} />
+
+        {/* Where PayMongo's checkout page returns the buyer to. */}
+        <Route path="/payment/done" element={<PaymentReturnPage outcome="done" />} />
+        <Route path="/payment/cancelled" element={<PaymentReturnPage outcome="cancelled" />} />
 
         <Route path="/admin" element={<Navigate to="/client" replace />} />
 

@@ -168,7 +168,10 @@ class SellerPayment {
 
 enum PaymentMethod {
   cashOnDelivery('Cash/COD', 'Cash on Delivery'),
-  gcash('GCash', 'GCash');
+  gcash('GCash', 'GCash'),
+
+  /// The payment gateway demo. Runs in PayMongo's sandbox: no real money.
+  paymongo('PayMongo', 'Pay online (PayMongo sandbox)');
 
   const PaymentMethod(this.wireValue, this.label);
 

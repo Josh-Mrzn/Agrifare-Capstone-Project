@@ -5,10 +5,15 @@ import { DEFAULT_DELIVERY_FEE } from '../models/User.js';
  * can be tested on its own (test/orderRules.test.js).
  */
 
-/** What a buyer can pay with. PayMongo was listed once but never built. */
-export const PAYMENT_METHODS = ['Cash/COD', 'GCash'];
+/**
+ * What a buyer can pay with. PayMongo is the payment gateway demo, run in
+ * sandbox mode (see services/paymongoService.js).
+ */
+export const PAYMENT_METHODS = ['Cash/COD', 'GCash', 'PayMongo'];
 
 export const isGcash = (method) => /gcash/i.test(method || '');
+
+export const isPaymongo = (method) => method === 'PayMongo';
 
 /**
  * A Philippine mobile number, in the 09XXXXXXXXX form the riders dial.
@@ -59,6 +64,9 @@ export const BUYER_CONFIRM_DAYS = 3;
 export function transitionBlocker(order, next, now = new Date()) {
   if (next === 'confirmed' && isGcash(order.paymentMethod) && order.paymentStatus !== 'paid') {
     return 'Confirm the GCash payment first. Check your GCash app, then mark it received.';
+  }
+  if (next === 'confirmed' && isPaymongo(order.paymentMethod) && order.paymentStatus !== 'paid') {
+    return 'Waiting for the buyer to finish paying online. PayMongo marks it paid automatically.';
   }
 
   if (order.source !== 'storefront') return null;

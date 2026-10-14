@@ -33,6 +33,22 @@ class OrderService {
     return OrderGroup.fromJson(body as Map<String, dynamic>);
   }
 
+  /// Opens a fresh PayMongo checkout for this order and returns its page.
+  Future<String> startOnlinePayment(String groupId) async {
+    final body = await _api.post('/buyer/orders/$groupId/paymongo', {});
+    final url = body is Map ? body['checkoutUrl'] : null;
+    if (url is! String || url.isEmpty) {
+      throw ApiException('PayMongo did not return a payment page. Try again.');
+    }
+    return url;
+  }
+
+  /// Asks the server - which asks PayMongo - whether this order is paid.
+  Future<bool> verifyOnlinePayment(String groupId) async {
+    final body = await _api.post('/buyer/orders/$groupId/paymongo/verify', {});
+    return body is Map && body['paid'] == true;
+  }
+
   /// The server decides whether cancelling is still allowed; the app only
   /// hides the button when it already knows the answer is no.
   Future<String> cancel(String groupId, String reason) async {
