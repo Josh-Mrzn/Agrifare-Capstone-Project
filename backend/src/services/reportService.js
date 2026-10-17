@@ -1,16 +1,11 @@
-import * as orderRepo from '../repositories/orderRepository.js';
-import * as inventoryRepo from '../repositories/inventoryRepository.js';
 import { findUserByUserId } from '../repositories/userRepository.js';
 import { sendMail, isMailConfigured } from '../config/mailer.js';
-import { buildPdf } from './pdfReport.js';
-
-const peso = (n) =>
-  `PHP ${Number(n || 0).toLocaleString('en-PH', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+import { sellerReport, reportFileName, SELLER_REPORTS } from '../analytics/reports.js';
+import { toPdf } from '../analytics/exporters.js';
+import { escapeHtml } from '../utils/escapeHtml.js';
 
 const shortDate = (d) =>
   d ? new Date(d).toLocaleDateString('en-PH', { month: 'short', day: 'numeric', year: 'numeric' }) : '—';
-
-const titleCase = (s) => (s ? s.charAt(0).toUpperCase() + s.slice(1) : '—');
 
 /** Short covering note; the numbers themselves live in the attached PDF. */
 function mailBody(seller, heading, lines) {
@@ -21,13 +16,13 @@ function mailBody(seller, heading, lines) {
       <p style="margin:4px 0 0;font-size:13px;color:#6b7268">${heading}</p>
     </div>
     <p style="font-size:14px;line-height:1.6;margin:0 0 14px">
-      Hi ${seller.name || 'there'}, your report is attached as a PDF.
+      Hi ${escapeHtml(seller.name) || 'there'}, your report is attached as a PDF.
     </p>
     <table style="width:100%;border-collapse:collapse;margin-bottom:16px">
       ${lines.map((l) => `
         <tr>
           <td style="padding:6px 0;font-size:13px;color:#6b7268">${l.label}</td>
-          <td style="padding:6px 0;font-size:13px;font-weight:bold;text-align:right">${l.value}</td>
+          <td style="padding:6px 0;font-size:13px;font-weight:bold;text-align:right">${escapeHtml(l.value)}</td>
         </tr>`).join('')}
     </table>
     <p style="font-size:12px;color:#6b7268;line-height:1.6;margin:0">
@@ -41,168 +36,37 @@ function mailBody(seller, heading, lines) {
 
 // ---------------------------------------------------------------- builders
 
-async function salesReport(sellerId, seller) {
-  const [orders, analytics] = await Promise.all([
-    orderRepo.findOrdersBySeller(sellerId, { status: 'completed' }),
-    orderRepo.getSellerAnalytics(sellerId),
-  ]);
-
-  const summary = [
-    { label: 'Total sales', value: peso(analytics.totalSales) },
-    { label: 'Completed orders', value: analytics.orderCount },
-    { label: 'Average order', value: peso(analytics.avgOrderValue) },
-  ];
-
-  const pdf = await buildPdf({
-    title: 'Sales report',
-    subtitle: `${seller.name || seller.email} · ${shortDate(new Date())}`,
-    summary,
-    columns: [
-      { label: 'Order', key: 'order', width: 90, strong: true },
-      { label: 'Buyer', key: 'buyer', width: 120 },
-      { label: 'Product', key: 'product', width: 130 },
-      { label: 'Qty', key: 'qty', width: 55, align: 'right' },
-      { label: 'Total', key: 'total', width: 90, align: 'right', strong: true },
-      { label: 'Date', key: 'date', width: 80, align: 'right' },
-    ],
-    rows: orders.map((o) => ({
-      order: o.orderNumber || '—',
-      buyer: o.customerName,
-      product: o.productName,
-      qty: `${o.quantity} kg`,
-      total: peso(o.total),
-      date: shortDate(o.orderDate),
-    })),
-    emptyText: 'No completed sales recorded yet.',
-  });
-
-  return {
-    pdf,
-    filename: 'agrifair-sales-report.pdf',
-    subject: 'Your AgriFair sales report',
-    html: mailBody(seller, 'Sales report', summary),
-  };
-}
-
-async function inventoryReport(sellerId, seller) {
-  const data = await inventoryRepo.getInventorySummary(sellerId);
-  const products = data?.products || [];
-
-  const summary = [
-    { label: 'Total stock', value: `${(data?.totalStock || 0).toLocaleString()} kg` },
-    { label: 'Stock value', value: peso(data?.stockValue) },
-    { label: 'Running low', value: data?.lowStockCount || 0 },
-  ];
-
-  const pdf = await buildPdf({
-    title: 'Inventory report',
-    subtitle: `${seller.name || seller.email} · ${shortDate(new Date())}`,
-    summary,
-    columns: [
-      { label: 'Product', key: 'product', width: 170, strong: true },
-      { label: 'Stock', key: 'stock', width: 80, align: 'right' },
-      { label: 'Warn at', key: 'warn', width: 70, align: 'right' },
-      { label: 'Status', key: 'status', width: 90 },
-      { label: 'Value', key: 'value', width: 100, align: 'right', strong: true },
-    ],
-    rows: products.map((p) => {
-      const stock = Number(p.stock ?? 0);
-      const threshold = Number(p.lowStockThreshold ?? 20);
-      return {
-        product: p.name,
-        stock: `${stock.toLocaleString()} kg`,
-        warn: `${threshold} kg`,
-        status: stock <= 0 ? 'Out of stock' : stock <= threshold ? 'Low' : 'In stock',
-        value: peso(stock * Number(p.price || 0)),
-      };
-    }),
-    emptyText: 'No products listed yet.',
-  });
-
-  return {
-    pdf,
-    filename: 'agrifair-inventory-report.pdf',
-    subject: 'Your AgriFair inventory report',
-    html: mailBody(seller, 'Inventory report', summary),
-  };
-}
-
-async function transactionsReport(sellerId, seller) {
-  const orders = await orderRepo.findOrdersBySeller(sellerId);
-
-  const paid = orders.filter((o) => o.paymentStatus === 'paid');
-  const received = paid.reduce((sum, o) => sum + Number(o.amountPaid || 0), 0);
-
-  const summary = [
-    { label: 'All orders', value: orders.length },
-    { label: 'Paid', value: paid.length },
-    { label: 'Money received', value: peso(received) },
-  ];
-
-  const pdf = await buildPdf({
-    title: 'Transactions',
-    subtitle: `${seller.name || seller.email} · ${shortDate(new Date())}`,
-    summary,
-    columns: [
-      { label: 'Order', key: 'order', width: 85, strong: true },
-      { label: 'Buyer', key: 'buyer', width: 105 },
-      { label: 'Method', key: 'method', width: 75 },
-      { label: 'Payment', key: 'payment', width: 80 },
-      { label: 'Order status', key: 'status', width: 85 },
-      { label: 'Total', key: 'total', width: 85, align: 'right', strong: true },
-      { label: 'Date', key: 'date', width: 75, align: 'right' },
-    ],
-    rows: orders.map((o) => ({
-      order: o.orderNumber || '—',
-      buyer: o.customerName,
-      method: o.paymentMethod || 'Cash/COD',
-      payment: titleCase((o.paymentStatus || 'unpaid').replace('_', ' ')),
-      status: titleCase(o.status),
-      total: peso(o.total),
-      date: shortDate(o.orderDate),
-    })),
-    emptyText: 'No transactions recorded yet.',
-  });
-
-  return {
-    pdf,
-    filename: 'agrifair-transactions.pdf',
-    subject: 'Your AgriFair transactions',
-    html: mailBody(seller, 'Transactions', summary),
-  };
-}
-
-const BUILDERS = {
-  sales: salesReport,
-  inventory: inventoryReport,
-  transactions: transactionsReport,
-};
+// The emailed PDF is built by the same report code as the downloads, with the
+// same period and filters, so the email and the screen never disagree.
+// "transactions" is the older name of the orders report.
+const TYPE_ALIASES = { transactions: 'orders' };
 
 /**
  * Emails a report as a PDF. The recipient is always the seller's own account
  * address — there is no "send to" input, so this cannot be used to mail one
  * business's figures to an outsider.
  */
-export const emailReport = async (sellerId, type) => {
-  const build = BUILDERS[type];
-  if (!build) throw new Error('Unknown report type');
+export const emailReport = async (sellerId, type, query = {}) => {
+  const reportType = TYPE_ALIASES[type] || type;
+  if (!SELLER_REPORTS.includes(reportType)) throw new Error('Unknown report type');
 
   if (!isMailConfigured()) {
     throw new Error(
-      'Email is not set up yet. Add GMAIL_CLIENT_ID, GMAIL_CLIENT_SECRET and GMAIL_REFRESH_TOKEN (or SMTP_HOST, SMTP_USER and SMTP_PASS) to backend/.env, then restart the server.'
+      'Email is not set up yet. Add BREVO_API_KEY (or the GMAIL_* or SMTP_* settings) to the server environment, then restart it.'
     );
   }
 
   const seller = await findUserByUserId(sellerId);
   if (!seller?.email) throw new Error('Your account has no email address on file.');
 
-  const { pdf, filename, subject, html } = await build(sellerId, seller);
+  const report = await sellerReport({ sellerId }, reportType, query);
+  const pdf = await toPdf(report);
 
   await sendMail({
     to: seller.email,
-    subject,
-    html,
-    attachments: [{ filename, content: pdf, contentType: 'application/pdf' }],
+    subject: `Your AgriFair ${report.title.toLowerCase()}`,
+    html: mailBody(seller, `${report.title} · ${report.period.from} to ${report.period.to}`, report.summary),
+    attachments: [{ filename: reportFileName(report, 'pdf'), content: pdf, contentType: 'application/pdf' }],
   });
 
   return { sent: true, to: seller.email };

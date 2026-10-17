@@ -223,7 +223,7 @@ export const reviewOrderPaymentHandler = async (req, res) => {
 // ====================== EMAIL A REPORT ======================
 export const emailReportHandler = async (req, res) => {
   try {
-    const result = await reportService.emailReport(req.user.userId, req.params.type);
+    const result = await reportService.emailReport(req.user.userId, req.params.type, req.body || {});
     res.json(result);
   } catch (error) {
     console.error('[reports] email failed:', error.message);

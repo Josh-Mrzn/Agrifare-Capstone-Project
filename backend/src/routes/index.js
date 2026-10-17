@@ -14,6 +14,7 @@ import deliveryRoutes from "./deliveryRoutes.js";
 import riderRoutes from "./riderRoutes.js";
 import sellerRoutes from "./sellerRoutes.js";
 import geoRoutes from "./geoRoutes.js";
+import analyticsRoutes from "./analyticsRoutes.js";
 
 const router = express.Router();
 
@@ -48,5 +49,6 @@ router.use("/delivery", deliveryRoutes); // → /api/delivery/...
 router.use("/riders", riderRoutes); // → /api/riders/... (seller side and rider side)
 router.use("/sellers", sellerRoutes); // → /api/sellers/...
 router.use("/geo", geoRoutes); // → /api/geo/...
+router.use("/analytics", analyticsRoutes); // → /api/analytics/... (seller and Super Admin)
 
 export default router;

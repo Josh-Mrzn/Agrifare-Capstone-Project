@@ -262,6 +262,8 @@ const orderSchema = new mongoose.Schema({
 
 orderSchema.index({ sellerId: 1, orderDate: -1 });
 orderSchema.index({ status: 1 });
+// Marketplace analytics read a date range across all sellers.
+orderSchema.index({ orderDate: -1 });
 orderSchema.index({ paymentReference: 1 }, { sparse: true });
 orderSchema.index({ paymongoCheckoutId: 1 }, { sparse: true });
 

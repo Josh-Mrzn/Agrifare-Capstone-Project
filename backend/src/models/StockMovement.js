@@ -40,6 +40,8 @@ const stockMovementSchema = new mongoose.Schema({
 });
 
 stockMovementSchema.index({ productId: 1, createdAt: -1 });
+// Inventory analytics read one seller's movements over a date range.
+stockMovementSchema.index({ sellerId: 1, createdAt: -1 });
 
 const StockMovement = mongoose.model('StockMovement', stockMovementSchema);
 export default StockMovement;
