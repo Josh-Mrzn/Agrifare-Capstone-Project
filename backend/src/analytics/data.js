@@ -3,7 +3,7 @@ import Order from '../models/Order.js';
 import Product from '../models/Product.js';
 import StockMovement from '../models/StockMovement.js';
 import User from '../models/User.js';
-import AdminApproval from '../models/AdminApproval.js';
+import AdminAuditLog from '../models/AdminAuditLog.js';
 
 /**
  * Database reads for analytics. Every read takes a `scope`:
@@ -173,13 +173,18 @@ export async function usersCreatedBetween(start, end) {
   return User.find({ createdAt: { $gte: start, $lt: end } }).select('role createdAt').lean();
 }
 
-/** Seller approvals granted in [start, end). */
+/**
+ * Seller approvals granted in [start, end). Approving a seller writes an
+ * APPROVE_SELLER entry to the audit log, which is the record of when it happened.
+ */
 export async function approvalsBetween(start, end) {
-  return AdminApproval.find({ status: 'approved', approvedAt: { $gte: start, $lt: end } }).select('approvedAt').lean();
+  const rows = await AdminAuditLog.find({ action: 'APPROVE_SELLER', createdAt: { $gte: start, $lt: end } }).select('createdAt').lean();
+  return rows.map((r) => ({ approvedAt: r.createdAt }));
 }
 
+/** Seller applications waiting: the same rule as the Users page (status pending). */
 export async function pendingApprovalCount() {
-  return AdminApproval.countDocuments({ status: 'pending' });
+  return User.countDocuments({ role: 'seller', status: 'pending' });
 }
 
 export async function findSeller(sellerId) {

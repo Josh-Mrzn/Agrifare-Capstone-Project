@@ -3,6 +3,8 @@ import { ArrowLeft, CalendarDays, CalendarRange, Users } from 'lucide-react';
 import { fetchUserAnalytics } from '../../services/superAdminApi';
 import { API_ORIGIN } from '../../services/authApi';
 import { wholePeso, number, formatDate, initialsOf } from '../../utils/format';
+import BuyerProfile from '../../components/analytics/BuyerProfile';
+import SellerAnalytics from '../../components/analytics/SellerAnalytics';
 
 const ROLE_LABEL = { seller: 'Seller', buyer: 'Buyer', rider: 'Rider', superadmin: 'Super Admin' };
 
@@ -18,6 +20,7 @@ function trend(series) {
 export default function UserDetailView({ user, onBack, onEdit, onToggleStatus }) {
   const isSeller = user.role === 'seller';
   const [analytics, setAnalytics] = useState(null);
+  const [fullAnalytics, setFullAnalytics] = useState(false);
 
   useEffect(() => {
     window.scrollTo({ top: 0 });
@@ -59,7 +62,9 @@ export default function UserDetailView({ user, onBack, onEdit, onToggleStatus })
 
       <div className="detail-grid">
         <div className="stack">
-          {!isSeller ? (
+          {user.role === 'buyer' && user.userId != null ? (
+            <BuyerProfile userId={user.userId} />
+          ) : !isSeller ? (
             <section className="panel">
               <div className="empty"><p>Sales figures are kept for sellers only. This is a {ROLE_LABEL[user.role]?.toLowerCase() || user.role} account.</p></div>
             </section>
@@ -151,6 +156,16 @@ export default function UserDetailView({ user, onBack, onEdit, onToggleStatus })
           </section>
         </aside>
       </div>
+
+      {isSeller && user.userId != null && (
+        fullAnalytics ? (
+          <SellerAnalytics base={`/analytics/platform/sellers/${user.userId}`} heading={<h3 className="an-seller-title">Full analytics for {user.name}</h3>} />
+        ) : (
+          <button type="button" className="btn btn-secondary" onClick={() => setFullAnalytics(true)}>
+            Open full seller analytics
+          </button>
+        )
+      )}
     </div>
   );
 }

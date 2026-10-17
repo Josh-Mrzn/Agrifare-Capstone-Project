@@ -54,7 +54,9 @@ export const corsOrigin = (origin, callback) => {
 
 app.use(cors({
   origin: corsOrigin,
-  credentials: true
+  credentials: true,
+  // Lets the web app read the file name of a downloaded report.
+  exposedHeaders: ['Content-Disposition'],
 }));
 app.get('/test', (req, res) => res.send('Server is alive!'));
 

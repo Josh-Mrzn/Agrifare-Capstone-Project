@@ -32,7 +32,8 @@ export const adjustStock = (id, quantity, type, note) =>
 export const fetchStockMovements = (id) => API.get(`/admin/inventory/${id}/movements`);
 
 export const reviewOrderPayment = (id, data) => API.put(`/admin/orders/${id}/payment`, data);
-export const emailReport = (type) => API.post(`/admin/reports/${type}/email`);
+// The same period and filters as the screen, so the emailed PDF matches it.
+export const emailReport = (type, params = {}) => API.post(`/admin/reports/${type}/email`, params);
 export const fetchMailStatus = () => API.get('/admin/reports/mail-status');
 
 /** An outside courier (LBC, J&T, Lalamove) with its tracking number. */

@@ -235,9 +235,14 @@ describe('analytics API', { skip }, () => {
     assert.equal((await get('/platform/buyers/2', 'admin')).status, 404);
   });
 
-  test('user growth counts accounts created in the period', async () => {
+  test('user growth counts accounts created in the period, and approvals from the audit log', async () => {
+    const { default: AdminAuditLog } = await import('../src/models/AdminAuditLog.js');
+    await AdminAuditLog.create({ adminId: 1, action: 'APPROVE_SELLER', targetId: 3, targetEmail: 'x@test.ph', details: 'approved' });
+    await models.User.create({ userId: 20, role: 'seller', name: 'Waiting Shop', email: 'waiting@test.ph', password: 'secret123', status: 'pending' });
     const { body } = await get('/platform/users?range=30d', 'admin');
-    assert.equal(body.totals.newSellers, 3);
+    assert.equal(body.totals.newSellers, 4);
+    assert.equal(body.totals.approvals, 1);
     assert.equal(body.allTime.activeSellers, 3);
+    assert.equal(body.allTime.pendingApprovals, 1); // the same rule as the Users page
   });
 });

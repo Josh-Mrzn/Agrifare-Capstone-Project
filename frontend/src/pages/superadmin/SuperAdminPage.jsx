@@ -23,6 +23,7 @@ import { getErrorMessage } from '../../services/authApi';
 import AuditLogPanel from './AuditLogPanel';
 import CredentialsPanel from './CredentialsPanel';
 import BusinessAnalytics from './BusinessAnalytics';
+import RecentPerformance from '../../components/analytics/RecentPerformance';
 import SettingsPanel from './SettingsPanel';
 import UserDetailView from './UserDetailView';
 import { clearSession, getSessionUser } from '../../utils/auth';
@@ -180,6 +181,8 @@ function Overview({ accounts, pending, revenue, run, go }) {
           See the breakdown <ArrowRight size={15} aria-hidden="true" />
         </button>
       </section>
+
+      <RecentPerformance onOpen={() => go('analytics')} />
 
       <div className="stats" style={{ '--cols': 3 }}>
         <button type="button" className="stat" onClick={() => go('users')}>

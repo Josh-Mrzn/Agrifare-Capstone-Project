@@ -153,7 +153,7 @@ function productMoveInsights(products, previousProducts, period) {
   }
   if (down) {
     out.push({
-      id: 'product-down', category: 'attention', tone: 'bad',
+      id: 'product-down', category: 'products', tone: 'bad',
       title: `${down.p.name} fell the most`,
       detail: `${peso(down.prev)} → ${peso(down.p.sales)} in completed sales, compared with ${vs}.`,
       link: { tab: 'products' },
@@ -313,7 +313,7 @@ export function platformInsights(ctx) {
       id: 'seller-decline', category: 'attention', tone: 'bad',
       title: `${s.name}'s completed sales fell ${pct(s.growth.pct)}`,
       detail: `${peso(s.sales - s.growth.abs)} → ${peso(s.sales)}, compared with ${comparisonName(ctx.period)}.${declining.length > 1 ? ` ${declining.length - 1} other seller${declining.length > 2 ? 's' : ''} also fell by a quarter or more.` : ''}`,
-      link: { tab: 'sellers', sellerId: s.sellerId },
+      link: { tab: 'sellers', sellerId: s.sellerId, name: s.name },
     });
   }
   list.push(varietyShareInsight(ctx.varieties || []));
