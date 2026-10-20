@@ -14,11 +14,11 @@ export const links = {
   sellerAccount: () => '/client?tab=account',
   buyerOrder: (groupId) => `/orders/${groupId}`,
   riderDelivery: (orderId) => `/rider?order=${orderId}`,
-  approvals: () => '/superadmin?tab=approvals',
+  approvals: () => '/superadmin?tab=users',
   messages: (role, conversationId) => {
     if (role === 'buyer') return `/messages/${conversationId}`;
     if (role === 'rider') return `/rider?conversation=${conversationId}`;
-    if (role === 'superadmin') return `/superadmin?tab=messages&conversation=${conversationId}`;
+    if (role === 'superadmin') return '/superadmin';
     return `/client?tab=messages&conversation=${conversationId}`;
   },
 };

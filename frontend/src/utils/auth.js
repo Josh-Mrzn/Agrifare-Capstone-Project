@@ -39,6 +39,15 @@ export function getSessionUser() {
   }
 }
 
+/** Updates the stored user (for example, a status that changed) in place. */
+export function saveSessionUser(user) {
+  try {
+    store().setItem('user', JSON.stringify(user));
+  } catch {
+    /* storage unavailable: the page still has it in memory */
+  }
+}
+
 export function clearSession() {
   for (const target of [sessionStorage, localStorage]) {
     try {

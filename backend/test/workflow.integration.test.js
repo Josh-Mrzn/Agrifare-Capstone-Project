@@ -586,7 +586,7 @@ describe('order and account workflows', { skip }, () => {
     assert.equal(profile.status, 200, msg(profile));
     const submit = await api('POST', '/api/user/seller-application', 'applicant');
     assert.equal(submit.status, 200, msg(submit));
-    assert.ok(await M.Notification.findOne({ userId: 1, link: '/superadmin?tab=approvals' }));
+    assert.ok(await M.Notification.findOne({ userId: 1, link: '/superadmin?tab=users' }));
     const queue = await api('GET', '/api/superadmin/approvals/pending', 'admin');
     assert.deepEqual(queue.body.map((u) => u.userId), [4]);
 

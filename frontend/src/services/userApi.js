@@ -29,3 +29,5 @@ export const updateAccount = (data) =>
 export const changePassword = (currentPassword, newPassword) =>
   API.put('/user/reset-password', { currentPassword, newPassword });
 export const fetchLoginHistory = () => API.get('/user/login-history');
+/** Sends a seller's application to the Super Admins (again, after a rejection). */
+export const submitSellerApplication = () => API.post('/user/seller-application');

@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useCallback, useState } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import {
   LayoutGrid, Package, Boxes, ShoppingCart, Truck, BarChart3, MessageSquare, UserCog,
@@ -13,7 +13,7 @@ import ReportsTab from './tabs/ReportsTab';
 import MessagesTab from './tabs/MessagesTab';
 import DeliveryPeopleTab from './tabs/DeliveryPeopleTab';
 import AccountInfoTab from './tabs/AccountInfoTab';
-import { clearSession, getSessionUser } from '../../utils/auth';
+import { clearSession, getSessionUser, saveSessionUser } from '../../utils/auth';
 import './AdminPage.css';
 
 const SECTIONS = [
@@ -36,8 +36,23 @@ function sectionFrom(param) {
 export default function AdminPage() {
   const navigate = useNavigate();
   const [params, setParams] = useSearchParams();
-  const user = getSessionUser() || {};
-  const active = sectionFrom(params.get('tab'));
+  const [user, setUser] = useState(() => getSessionUser() || {});
+  // A seller still applying (or turned down) has only their account page:
+  // the shop tools open once a Super Admin approves the application.
+  const approved = user.status === 'active';
+  const sections = approved ? SECTIONS : SECTIONS.filter((s) => s.id === 'account');
+  const active = approved ? sectionFrom(params.get('tab')) : 'account';
+
+  // The live status from the account, so an approval shows without signing
+  // out and back in.
+  const onStatus = useCallback((me) => {
+    setUser((prev) => {
+      if (prev.status === me.status) return prev;
+      const next = { ...prev, status: me.status };
+      saveSessionUser(next);
+      return next;
+    });
+  }, []);
 
   // The section lives in the URL, so a refresh, the Back button and links in
   // notifications all land on the right one.
@@ -56,7 +71,7 @@ export default function AdminPage() {
     delivery: <DeliveryPeopleTab />,
     messages: <MessagesTab user={user} />,
     analytics: <ReportsTab />,
-    account: <AccountInfoTab />,
+    account: <AccountInfoTab onStatus={onStatus} />,
   }[active];
 
   return (
@@ -64,12 +79,12 @@ export default function AdminPage() {
       portalName="Seller portal"
       roleLabel="Seller"
       workspaceLabel="Seller workspace"
-      sections={SECTIONS}
+      sections={sections}
       active={active}
       onSelect={go}
       user={user}
       onSignOut={signOut}
-      headerActions={<NotificationBell onNavigate={go} />}
+      headerActions={approved ? <NotificationBell onNavigate={go} /> : null}
     >
       {content}
     </PortalShell>

@@ -6,7 +6,7 @@ import Modal from '../../../components/Modal';
 import { fetchMyOrders, fetchMyProducts, recordSale } from '../../../services/clientApi';
 import { getErrorMessage } from '../../../services/authApi';
 import { wholePeso, peso, number, formatDate, quantityLabel } from '../../../utils/format';
-import { STATUS_LABEL, statusBadge, PAYMENT_LABEL, paymentBadge, METHOD_LABEL } from '../orderStatus';
+import { STATUS_LABEL, statusBadge, PAYMENT_LABEL, paymentBadge, METHOD_LABEL, groupSellerOrders } from '../orderStatus';
 
 const FILTERS = [
   { id: 'all', label: 'All' },
@@ -38,7 +38,7 @@ export default function OrdersTab() {
     try {
       const res = await fetchMyOrders();
       const list = res.data?.orders || res.data || [];
-      setOrders(Array.isArray(list) ? list : []);
+      setOrders(Array.isArray(list) ? groupSellerOrders(list) : []);
       setError('');
     } catch (err) {
       setError(getErrorMessage(err, 'Could not load your orders.'));
@@ -54,7 +54,8 @@ export default function OrdersTab() {
 
   const filter = FILTERS.find((f) => f.id === filterId);
   const shown = useMemo(() => (orders || []).filter((o) => matches(filter, o)), [orders, filter]);
-  const selected = (orders || []).find((o) => o._id === openId);
+  // A notification may link to any line of the order.
+  const selected = (orders || []).find((o) => o.ids.includes(openId));
 
   if (orders === null) {
     return <div className="panel"><div className="skeleton-rows"><div className="skeleton" /><div className="skeleton" /><div className="skeleton" /></div></div>;
@@ -101,7 +102,7 @@ export default function OrdersTab() {
                   <th>Order</th>
                   <th>Rice</th>
                   <th>Payment</th>
-                  <th>Status</th>
+                  <th>Delivery</th>
                   <th className="is-num">Total</th>
                   <th>Date</th>
                 </tr>
@@ -119,8 +120,8 @@ export default function OrdersTab() {
                     </td>
                     <td data-label="Rice">
                       <span className="cell-main">
-                        <span className="text-strong">{o.productName}</span>
-                        <span>{quantityLabel(o)}</span>
+                        <span className="text-strong">{o.lines.length > 1 ? o.lines.map((l) => l.productName).join(', ') : o.productName}</span>
+                        <span>{o.lines.length > 1 ? `${o.lines.length} lines` : quantityLabel(o)}</span>
                       </span>
                     </td>
                     <td data-label="Payment">
@@ -129,7 +130,13 @@ export default function OrdersTab() {
                         <span>{METHOD_LABEL[o.paymentMethod] || o.paymentMethod}</span>
                       </span>
                     </td>
-                    <td data-label="Status"><span className={statusBadge(o.status)}>{STATUS_LABEL[o.status] || o.status}</span></td>
+                    <td data-label="Delivery">
+                      <span className="cell-main">
+                        <span className={statusBadge(o.status)}>{STATUS_LABEL[o.status] || o.status}</span>
+                        {o.cancellation?.status === 'requested' && <span className="text-danger">Cancellation requested</span>}
+                        {o.complaint?.status === 'open' && <span className="text-danger">Problem reported</span>}
+                      </span>
+                    </td>
                     <td data-label="Total" className="is-num">{wholePeso(o.total)}</td>
                     <td data-label="Date" className="muted">{formatDate(o.orderDate)}</td>
                   </tr>

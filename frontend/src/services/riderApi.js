@@ -27,11 +27,19 @@ export const assignRider = (orderId, riderUserId) =>
   API.put(`/riders/assign/${orderId}`, { riderUserId });
 
 // ---- The rider's side ----
-export const fetchMyDeliveries = () => API.get('/riders/me/deliveries');
+export const fetchMyDeliveries = (scope = 'active') => API.get('/riders/me/deliveries', { params: { scope } });
+export const acceptDelivery = (orderId) => API.post(`/riders/me/deliveries/${orderId}/accept`);
+export const declineDelivery = (orderId, reason) => API.post(`/riders/me/deliveries/${orderId}/decline`, { reason });
+/** Picked up and on the road. */
+export const startDelivery = (orderId) => API.post(`/riders/me/deliveries/${orderId}/start`);
+/** Safe to send again: a retry after it went through returns the delivered order. */
+export const markDelivered = (orderId, { cashCollected, note } = {}) =>
+  API.post(`/riders/me/deliveries/${orderId}/delivered`, { cashCollected, note });
 
 export const pushMyLocation = (orderId, { lat, lng, etaMinutes }) =>
   API.put(`/riders/me/deliveries/${orderId}/location`, { lat, lng, etaMinutes });
 
+/** The photo at the door. Kept on the order; "Mark as delivered" is a separate step. */
 export const uploadDeliveryProof = (orderId, file, note) => {
   const fd = new FormData();
   fd.append('proof', file);

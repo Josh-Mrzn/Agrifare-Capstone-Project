@@ -50,7 +50,7 @@ const ROLE_FILTERS = [
 
 const ROLE_LABEL = { seller: 'Seller', buyer: 'Buyer', rider: 'Rider', superadmin: 'Super Admin' };
 
-const STATUS_TONE = { active: 'success', pending: 'warning', suspended: 'danger', rejected: '' };
+const STATUS_TONE = { active: 'success', pending: 'warning', suspended: 'danger', rejected: '', deactivated: '' };
 
 const statusBadgeOf = (status = 'active') => (
   <span className={`badge${STATUS_TONE[status] ? ` badge-${STATUS_TONE[status]}` : ''}`}>
@@ -240,31 +240,41 @@ function PendingSellers({ pending, run, onReject }) {
       <div className="panel-head">
         <div>
           <h2>Seller applications</h2>
-          <p>Approve a seller once their details check out. They can then sign in and list rice.</p>
+          <p>Submitted applications. Verify at least one permit under Credentials, then approve; the shop opens at once.</p>
         </div>
       </div>
       {pending.length === 0 ? (
         <div className="empty"><p>No applications waiting.</p></div>
       ) : (
         <ul className="list">
-          {pending.map((u) => (
-            <li key={idOf(u)} className="list-row">
-              <span className="list-row-main">
-                <strong>{u.name}</strong>
-                <span>{u.email}, applied {formatDate(u.createdAt, 'recently')}{u.emailVerified ? '' : ', email not verified yet'}</span>
-              </span>
-              <span className="list-row-side">
-                <button type="button" className="btn btn-secondary btn-sm" onClick={() => onReject(u)}>Reject</button>
-                <button
-                  type="button"
-                  className="btn btn-primary btn-sm"
-                  onClick={() => run(() => approveSeller(idOf(u)), `${u.name} is approved and can now sign in.`, 'Could not approve this seller.')}
-                >
-                  Approve
-                </button>
-              </span>
-            </li>
-          ))}
+          {pending.map((u) => {
+            const docs = u.documents || [];
+            const verified = docs.filter((d) => d.status === 'verified').length;
+            return (
+              <li key={idOf(u)} className="list-row">
+                <span className="list-row-main">
+                  <strong>{u.sellerProfile?.businessName || u.name}</strong>
+                  <span>
+                    {u.email}, submitted {formatDate(u.application?.submittedAt || u.createdAt, 'recently')}
+                    {`, ${docs.length} permit${docs.length === 1 ? '' : 's'} (${verified} verified)`}
+                    {u.emailVerified ? '' : ', email not verified yet'}
+                  </span>
+                </span>
+                <span className="list-row-side">
+                  <button type="button" className="btn btn-secondary btn-sm" onClick={() => onReject(u)}>Reject</button>
+                  <button
+                    type="button"
+                    className="btn btn-primary btn-sm"
+                    disabled={!verified}
+                    title={verified ? undefined : 'Verify a permit under Credentials first'}
+                    onClick={() => run(() => approveSeller(idOf(u)), `${u.name} is approved and can now list rice.`, 'Could not approve this seller.')}
+                  >
+                    Approve
+                  </button>
+                </span>
+              </li>
+            );
+          })}
         </ul>
       )}
     </section>
@@ -326,7 +336,7 @@ function UsersSection({ accounts, pending, run, me }) {
   if (!accounts) return <div className="panel"><div className="skeleton-rows"><div className="skeleton" /><div className="skeleton" /></div></div>;
 
   function toggle(u) {
-    const suspended = u.status === 'suspended';
+    const suspended = u.status === 'suspended' || u.status === 'deactivated';
     return run(
       () => (suspended ? activateUser(idOf(u)) : suspendUser(idOf(u))),
       suspended ? `${u.name} can sign in again.` : `${u.name} is suspended and signed out.`,
@@ -342,17 +352,17 @@ function UsersSection({ accounts, pending, run, me }) {
       {rejecting && <RejectDialog seller={rejecting} run={run} onClose={() => setRejecting(null)} />}
       {deleting && (
         <ConfirmDialog
-          title={`Delete ${deleting.name || deleting.email}?`}
-          confirmLabel="Delete account"
+          title={`Deactivate ${deleting.name || deleting.email}?`}
+          confirmLabel="Deactivate account"
           danger
           onClose={() => setDeleting(null)}
           onConfirm={async () => {
-            await run(() => deleteUserAccount(idOf(deleting)), `${deleting.name || deleting.email} was deleted.`, 'Could not delete this account.');
+            await run(() => deleteUserAccount(idOf(deleting)), `${deleting.name || deleting.email} was deactivated.`, 'Could not deactivate this account.');
             setDeleting(null);
             setViewing(null);
           }}
         >
-          <p>This removes the account from AgriFair for good. Their past orders keep their name. To stop someone signing in without losing anything, suspend them instead.</p>
+          <p>They are signed out and cannot sign in again; a seller&rsquo;s shop disappears from the app. Their orders, reviews and messages are kept, and you can reactivate the account later. Accounts with deliveries in progress cannot be deactivated until those are finished.</p>
         </ConfirmDialog>
       )}
     </>
@@ -463,15 +473,15 @@ function UsersSection({ accounts, pending, run, me }) {
                           { label: 'View details', onClick: () => setViewing(u) },
                           { label: 'Edit account', onClick: () => setEditing(u) },
                           {
-                            label: u.status === 'suspended' ? 'Reinstate' : 'Suspend',
+                            label: u.status === 'suspended' ? 'Reinstate' : u.status === 'deactivated' ? 'Reactivate' : 'Suspend',
                             hidden: u.role === 'superadmin' || u.status === 'pending' || u.status === 'rejected',
                             separatorBefore: true,
                             onClick: () => toggle(u),
                           },
                           {
-                            label: 'Delete',
+                            label: 'Deactivate',
                             danger: true,
-                            hidden: idOf(u) === idOf(me),
+                            hidden: idOf(u) === idOf(me) || u.status === 'deactivated',
                             separatorBefore: u.role === 'superadmin',
                             onClick: () => setDeleting(u),
                           },
@@ -497,7 +507,6 @@ function AccountForm({ user, run, onClose }) {
     email: user?.email || '',
     password: '',
     role: user?.role || 'seller',
-    status: user?.status || 'active',
   });
   const [error, setError] = useState('');
   const [busy, setBusy] = useState(false);
@@ -514,7 +523,9 @@ function AccountForm({ user, run, onClose }) {
       return;
     }
     setBusy(true);
-    const payload = { name: form.name.trim(), email: form.email.trim(), role: form.role, status: form.status };
+    // Status has its own actions (approve, suspend, deactivate), each with its
+    // own checks, so the form never sets it. New accounts start active.
+    const payload = { name: form.name.trim(), email: form.email.trim(), role: form.role };
     if (form.password) payload.password = form.password;
     const ok = await run(
       () => (user ? updateUserAccount(idOf(user), payload) : createUserAccount(payload)),
@@ -545,14 +556,6 @@ function AccountForm({ user, run, onClose }) {
                 <option value="buyer">Buyer</option>
                 <option value="superadmin">Super Admin</option>
                 {form.role === 'rider' && <option value="rider">Rider</option>}
-              </select>
-            </label>
-            <label className="field">
-              <span className="field-label">Status</span>
-              <select className="select" value={form.status} onChange={set('status')}>
-                <option value="active">Active</option>
-                <option value="suspended">Suspended</option>
-                {form.role === 'seller' && <option value="pending">Waiting for approval</option>}
               </select>
             </label>
             <label className="field span-all">

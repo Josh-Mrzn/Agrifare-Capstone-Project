@@ -1,6 +1,6 @@
 import React, { useCallback, useEffect, useState } from 'react';
 import { X, ImagePlus } from 'lucide-react';
-import { fetchMe, updateAccount } from '../../../services/userApi';
+import { fetchMe, updateAccount, submitSellerApplication } from '../../../services/userApi';
 import { API_ORIGIN, getErrorMessage } from '../../../services/authApi';
 import PrivateImage from '../../../components/PrivateImage';
 import {
@@ -25,7 +25,83 @@ const PAYOUT = {
   rejected: { tone: 'danger', label: 'GCash not approved', text: 'Not approved. Fix the details below and save again.' },
 };
 
-export default function AccountInfoTab() {
+const DOC_LABEL = { BIR: 'BIR', DTI: 'DTI', SEC: 'SEC', MAYORS_PERMIT: "Mayor's permit", BARANGAY: 'Barangay clearance', ORGANIC_CERT: 'Organic certificate', OTHER: 'Other' };
+
+/**
+ * A seller who is not approved yet: what is still missing, what the reviewers
+ * said, and the button that sends it to them.
+ */
+function ApplicationPanel({ me, onSubmitted, goTo }) {
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState('');
+  const docs = me.documents || [];
+  const submitted = Boolean(me.application?.submittedAt) && me.status === 'pending';
+  const checks = [
+    { id: 'type', done: Boolean(me.sellerType), text: 'Say what kind of seller you are', to: 'business' },
+    { id: 'name', done: Boolean(me.sellerProfile?.businessName?.trim()), text: 'Add your business name', to: 'business' },
+    { id: 'doc', done: docs.some((d) => d.status !== 'rejected'), text: 'Upload at least one business permit', to: 'documents' },
+  ];
+  const ready = checks.every((c) => c.done);
+
+  const submit = async () => {
+    setBusy(true);
+    setError('');
+    try {
+      await submitSellerApplication();
+      await onSubmitted();
+    } catch (err) {
+      setError(getErrorMessage(err, 'Could not send your application.'));
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  return (
+    <section className="panel application-panel" aria-live="polite">
+      <div className="panel-head">
+        <div>
+          <span className="eyebrow">Seller application</span>
+          <h2>
+            {me.status === 'rejected' ? 'Your application needs changes'
+              : submitted ? 'Your application is being reviewed'
+                : 'Finish your application to open your shop'}
+          </h2>
+          <p>
+            {me.status === 'rejected'
+              ? `The AgriFair team said: ${me.statusReason || 'no reason given'}. Fix it below, then submit again.`
+              : submitted
+                ? `Sent ${formatDate(me.application.submittedAt)}. A Super Admin checks your permit, then approves your shop. You will get a notification.`
+                : 'You can list rice and take orders once a Super Admin approves your shop. GCash is optional: without it buyers pay cash on delivery or online.'}
+          </p>
+        </div>
+      </div>
+      <div className="panel-body">
+        <ul className="checklist">
+          {checks.map((c) => (
+            <li key={c.id} className={c.done ? 'is-done' : ''}>
+              <span aria-hidden="true">{c.done ? '✓' : '•'}</span>
+              {c.done ? c.text : <button type="button" className="link" onClick={() => goTo(c.to)}>{c.text}</button>}
+            </li>
+          ))}
+          {docs.map((d) => (
+            <li key={d.type} className={d.status === 'verified' ? 'is-done' : ''}>
+              <span aria-hidden="true">{d.status === 'verified' ? '✓' : d.status === 'rejected' ? '✕' : '…'}</span>
+              {DOC_LABEL[d.type] || d.type}: {d.status === 'verified' ? 'verified' : d.status === 'rejected' ? `not accepted${d.rejectionReason ? ` (${d.rejectionReason})` : ''}` : 'waiting for review'}
+            </li>
+          ))}
+        </ul>
+        {error && <p className="alert alert-danger">{error}</p>}
+        {!submitted && (
+          <button type="button" className="btn btn-primary" disabled={!ready || busy} onClick={submit}>
+            {busy ? 'Sending…' : me.status === 'rejected' ? 'Submit again' : 'Submit for review'}
+          </button>
+        )}
+      </div>
+    </section>
+  );
+}
+
+export default function AccountInfoTab({ onStatus }) {
   const [section, setSection] = useState('profile');
   const [me, setMe] = useState(null);
   const [error, setError] = useState('');
@@ -34,10 +110,11 @@ export default function AccountInfoTab() {
     try {
       const res = await fetchMe();
       setMe(res.data);
+      onStatus?.(res.data);
     } catch (err) {
       setError(getErrorMessage(err, 'Could not load your account.'));
     }
-  }, []);
+  }, [onStatus]);
 
   useEffect(() => {
     // load() sets state only after its await, which this rule cannot see.
@@ -62,6 +139,10 @@ export default function AccountInfoTab() {
         </div>
         <span className={`badge${payout.tone ? ` badge-${payout.tone}` : ''}`}>{payout.label}</span>
       </section>
+
+      {me.role === 'seller' && me.status !== 'active' && (
+        <ApplicationPanel me={me} onSubmitted={load} goTo={setSection} />
+      )}
 
       <div className="tabs" role="tablist" aria-label="Account sections">
         {SECTIONS.map((s) => (

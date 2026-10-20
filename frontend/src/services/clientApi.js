@@ -38,9 +38,19 @@ export const fetchMailStatus = () => API.get('/admin/reports/mail-status');
 export const setOrderCourier = (id, data) => API.put(`/admin/orders/${id}/courier`, data);
 
 /** The seller's own photo at the door, for an order their courier carried. */
-export const uploadSellerDeliveryProof = (id, file, note) => {
+export const uploadSellerDeliveryProof = (id, file, note, cashCollected) => {
   const fd = new FormData();
   fd.append('proof', file);
   if (note) fd.append('note', note);
+  if (cashCollected !== undefined && cashCollected !== '') fd.append('cashCollected', cashCollected);
   return API.post(`/admin/orders/${id}/delivered`, fd, { headers: { 'Content-Type': 'multipart/form-data' } });
 };
+
+/** The seller's answer to a buyer's cancellation request. */
+export const decideCancellation = (id, approve, note) => API.put(`/admin/orders/${id}/cancellation`, { approve, note });
+/** Money given back on a cancelled, paid order. */
+export const recordRefund = (id, data) => API.put(`/admin/orders/${id}/refund`, data);
+/** Corrects a cash-on-delivery amount that did not match, with the reason. */
+export const correctCod = (id, amount, note) => API.put(`/admin/orders/${id}/cod`, { amount, note });
+/** Closes a problem the buyer reported. */
+export const resolveProblem = (id, note) => API.put(`/admin/orders/${id}/problem`, { note });
