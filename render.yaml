@@ -34,3 +34,7 @@ services:
         sync: false
       - key: PAYMONGO_WEBHOOK_SECRET
         sync: false
+      # Protects POST /api/jobs/auto-complete, which the GitHub Actions
+      # schedule calls. Render generates it; copy it into the repo secret.
+      - key: CRON_SECRET
+        generateValue: true

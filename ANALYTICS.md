@@ -48,7 +48,7 @@ This is the reference for every number on the analytics pages, in the downloadab
   - Delivered orders the buyer has not yet confirmed are not sales yet.
   - Cancelled orders never count.
   - Sales include the delivery fee. "Rice sales" (used for price per kg) leaves it out.
-  - The app has no refund status. A cancelled order is the only reversal, and it is excluded.
+  - Cancelled orders are excluded from sales whether or not they were paid. Money returned on them is reported separately as refunds (below).
 - **Order value placed** (Super Admin). The `total` of every order placed in the period except cancelled ones, whatever stage it is at.
 - **Completed orders.** Distinct orders with a completed line.
 - **In progress.** pending, confirmed, preparing, out for delivery, delivered.
@@ -59,6 +59,7 @@ This is the reference for every number on the analytics pages, in the downloadab
 - **Quantities.** Sacks are always counted together with their size: 3 × 25 kg is 75 kg. Kilograms are the common unit for adding sizes together. Product tables keep each pack size on its own row.
 - **Price per kg.** Rice amount actually charged ÷ kilograms, using the prices on the orders, never today's list price.
 - **Share.** A product's, variety's or seller's sales ÷ total sales for the same period and filters.
+- **Refunded.** Money the seller recorded as returned to buyers, on orders placed in the period (`paymentStatus` refunded, `refund.amount`). Shown on the Sales pages with what is **still to refund**: money received on cancelled orders and not yet returned (`refund_due`). See `WORKFLOW.md` for how an order gets there.
 
 ## Changes and comparisons
 
@@ -118,6 +119,10 @@ The findings are fixed rules applied to the numbers above. No language model or 
 
 - **Geographic breakdowns.** An order stores a free-text delivery address. The structured province and city live on the buyer's saved addresses and are not copied onto orders. Any breakdown by place would be a guess, so there is none.
 - **Seasonality claims.** These need at least two years of completed sales to mean anything. Until then the page says how short the history is.
+
+## One source
+
+The seller dashboard, the Super Admin overview figure and a seller's page in the Super Admin portal read these same sections. The older per-seller and platform figures (`/api/admin/orders/analytics`, `/orders/breakdown`, `/api/superadmin/users/:id/analytics`, `/analytics/revenue`, `/analytics/businesses`) were removed, so no page can show a second, different "sales" number.
 
 ## Tests
 

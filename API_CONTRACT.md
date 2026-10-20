@@ -33,6 +33,9 @@ client, hindi lang ipakita:
 | `code` | Kahulugan | Dapat gawin ng client |
 |---|---|---|
 | `EMAIL_NOT_VERIFIED` | Hindi pa napapatunayan ang email | Dalhin sa OTP screen, magpadala ng bagong code |
+| `WRONG_APP` | Ang role ay hindi para sa app na ito (hal. seller sa mobile) | Sabihin kung saang app dapat mag-sign in |
+| `ACCOUNT_DEACTIVATED` | Isinara ng Super Admin ang account | Ibalik sa sign-in, ipakita ang mensahe |
+| `SELLER_NOT_APPROVED` | Hindi pa aprubado ang seller | Ipakita lang ang application/Account |
 
 > Basahin ang `code`, huwag ang pangungusap. Nagbabago ang wording; ang `code` hindi.
 
@@ -263,3 +266,60 @@ Mga patakaran ng status (para sa order mula sa app):
 |---|---|
 | `PUT /superadmin/approvals/:id/reject` | `reason`. Nagiging `rejected` ang seller; makikita niya ang dahilan sa sign-in |
 | `PUT /superadmin/users/:id` | `name`, `email`, `role`, `status`, `password` lang ang binabasa. Hina-hash ang password |
+
+---
+
+## Order, bayad at paghahatid (2026-10)
+
+Buong paliwanag: `WORKFLOW.md`. Lahat ng aksyon sa ibaba ay para sa buong
+seller-order (lahat ng linya ng iisang seller sa iisang checkout), kahit isang
+linya lang ang `:id` na ipinadala.
+
+### Buyer (`/api/buyer`, buyer lang)
+
+| Method | Path | Body | Gawa |
+|---|---|---|---|
+| POST | `/orders/:groupId/cancel` | `{ reason }` | Kanselado agad (pending at unpaid) o request sa seller. Sagot: order + `cancellationOutcome` (`cancelled`/`requested`) |
+| POST | `/orders/:groupId/payment-proof` | multipart `paymentProof`, `paymentReference` | Bagong GCash resibo matapos `rejected` |
+| POST | `/orders/:groupId/problem` | `{ reason }` | Report a problem sa delivered na order |
+| POST | `/orders/:groupId/received` | | Tapos na (kung bayad at walang bukas na problema/request) |
+
+Mga bagong field sa order ng buyer: `cancelNeedsApproval`, `cancellationRequested`,
+`problemOpen`, `canResubmitPayment`, `canReportProblem`, `paymentNote`,
+`cancellationNote`, `complaintNote`, `refund { amount, reference }`, at sa bawat
+item `paymentStatus`, `riderUserId`, `courierName`.
+
+`POST /api/cart/checkout` tumatanggap ng `checkoutKey` (o header `Idempotency-Key`):
+parehong key, parehong order — hindi nadodoble.
+
+### Seller (`/api/admin`, aprubadong seller lang)
+
+| Method | Path | Body |
+|---|---|---|
+| PUT | `/orders/:id/status` | `{ status, reason }` |
+| PUT | `/orders/:id/payment` | `{ paid, reference, amount, note }` — GCash na `proof_sent` lang |
+| PUT | `/orders/:id/cancellation` | `{ approve, note }` |
+| PUT | `/orders/:id/refund` | `{ amount?, reference, note }` |
+| PUT | `/orders/:id/cod` | `{ amount, note }` — pagtama ng cash, may dahilan |
+| PUT | `/orders/:id/problem` | `{ note }` |
+| POST | `/orders/:id/delivered` | multipart `proof`, `note`, `cashCollected` (courier) |
+
+### Rider (`/api/riders/me`, rider lang)
+
+| Method | Path | Body |
+|---|---|---|
+| GET | `/deliveries?scope=active\|history` | |
+| GET | `/deliveries/:orderId` | |
+| POST | `/deliveries/:orderId/accept` | |
+| POST | `/deliveries/:orderId/decline` | `{ reason }` |
+| POST | `/deliveries/:orderId/start` | |
+| POST | `/deliveries/:orderId/proof` | multipart `proof`, `note` (hindi pa delivered) |
+| POST | `/deliveries/:orderId/delivered` | `{ cashCollected?, note? }` — ligtas ulitin |
+| PUT | `/deliveries/:orderId/location` | `{ lat, lng }` |
+
+### Iba pa
+
+- `POST /api/user/seller-application` — ipadala ang application ng seller.
+- `POST /api/chat/send` tumatanggap ng `orderRef` (groupId) para sa rider ↔ buyer.
+- `POST /api/jobs/auto-complete` — header `x-cron-secret`; wala kapag walang `CRON_SECRET`.
+- `DELETE /api/superadmin/users/:id` — nagde-deactivate na, hindi nagbubura.

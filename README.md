@@ -202,11 +202,19 @@ mobile/lib/
 
 ---
 
+## Mga workflow
+
+Order, bayad, cancellation, refund, rider at seller application: tingnan ang
+[`WORKFLOW.md`](WORKFLOW.md). Analytics: [`ANALYTICS.md`](ANALYTICS.md).
+
 ## Pagsubok
 
 ```bash
 cd backend
 npm test          # mga patakaran ng order, upload, at search (node:test)
+# kasama ang HTTP tests ng order/bayad/delivery/accounts at analytics,
+# sa isang throwaway na database lang (binubura bago at pagkatapos):
+MONGO_TEST_URI=mongodb://127.0.0.1:27017/agrifair_test npm test
 
 cd mobile
 flutter test

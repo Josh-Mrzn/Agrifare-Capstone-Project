@@ -1,0 +1,41 @@
+# Closes delivered orders 7 days after delivery when nothing is open on them.
+#
+# The API also runs this on start and hourly, but a free Render instance
+# sleeps when idle and misses those hours. This wakes it once a day.
+# Needs two repository secrets (Settings > Secrets and variables > Actions):
+#   API_URL      e.g. https://agrifair-api.onrender.com   (no trailing slash)
+#   CRON_SECRET  the same value as CRON_SECRET on Render
+# Without them the job skips itself. Running it twice is harmless.
+name: Auto-complete delivered orders
+
+on:
+  schedule:
+    - cron: "17 18 * * *" # 02:17 Philippine time
+  workflow_dispatch:
+
+jobs:
+  auto-complete:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Call the API
+        env:
+          API_URL: ${{ secrets.API_URL }}
+          CRON_SECRET: ${{ secrets.CRON_SECRET }}
+        run: |
+          if [ -z "$API_URL" ] || [ -z "$CRON_SECRET" ]; then
+            echo "API_URL or CRON_SECRET is not set; skipping."
+            exit 0
+          fi
+          # A sleeping free instance can take a minute to wake: retry.
+          for attempt in 1 2 3 4; do
+            if curl -fsS --max-time 90 -X POST \
+              -H "x-cron-secret: $CRON_SECRET" \
+              "$API_URL/api/jobs/auto-complete"; then
+              echo
+              exit 0
+            fi
+            sleep $((attempt * 30))
+          done
+          echo "The API did not answer." >&2
+          exit 1
