@@ -1,3 +1,4 @@
+import 'dart:math';
 import 'dart:io';
 
 import 'package:flutter/material.dart';
@@ -40,6 +41,11 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
   bool _loadingAddress = true;
   bool _loadingPayment = false;
   bool _placing = false;
+
+  /// One per visit to this screen, sent with every press of Place order, so
+  /// a retry after a dropped connection cannot place the order twice.
+  final String _checkoutKey =
+      '${DateTime.now().microsecondsSinceEpoch}-${Random.secure().nextInt(1 << 32)}';
 
   @override
   void initState() {
@@ -178,6 +184,7 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
         receiptPath: _receipt?.path,
         paymentReference: _referenceController.text.trim(),
         addressId: address.id,
+        checkoutKey: _checkoutKey,
       );
 
       if (!mounted) return;

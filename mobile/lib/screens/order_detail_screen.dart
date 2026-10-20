@@ -1,11 +1,13 @@
 import 'package:cached_network_image/cached_network_image.dart';
 import 'package:flutter/material.dart';
+import 'package:image_picker/image_picker.dart';
 import 'package:url_launcher/url_launcher.dart';
 
 import '../models/order.dart';
 import '../services/api_client.dart';
 import '../services/order_service.dart';
 import '../theme/app_theme.dart';
+import 'conversation_screen.dart';
 import '../widgets/clay.dart';
 import '../widgets/delivery_map.dart';
 import '../widgets/private_image.dart';
@@ -24,6 +26,7 @@ class _OrderDetailScreenState extends State<OrderDetailScreen>
     with WidgetsBindingObserver {
   late OrderGroup _order = widget.order;
   bool _cancelling = false;
+  bool _working = false;
   bool _confirming = false;
   bool _paying = false;
 
@@ -186,17 +189,20 @@ class _OrderDetailScreenState extends State<OrderDetailScreen>
         shape: RoundedRectangleBorder(
           borderRadius: BorderRadius.circular(AppRadius.lg),
         ),
-        title: const Text(
-          'Cancel this order?',
-          style: TextStyle(fontSize: 18, fontWeight: FontWeight.w700),
+        title: Text(
+          _order.cancelNeedsApproval ? 'Ask to cancel this order?' : 'Cancel this order?',
+          style: const TextStyle(fontSize: 18, fontWeight: FontWeight.w700),
         ),
         content: Column(
           mainAxisSize: MainAxisSize.min,
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            const Text(
-              'The seller will see why. This cannot be undone.',
-              style: TextStyle(fontSize: 13.5, color: AppColors.textMuted),
+            Text(
+              _order.cancelNeedsApproval
+                  ? 'You have paid or the seller has started, so the seller decides. '
+                      'If they approve, any payment is refunded to you.'
+                  : 'The seller will see why. This cannot be undone.',
+              style: const TextStyle(fontSize: 13.5, color: AppColors.textMuted),
             ),
             const SizedBox(height: 16),
             TextField(
@@ -220,7 +226,7 @@ class _OrderDetailScreenState extends State<OrderDetailScreen>
               Navigator.of(context).pop(reason);
             },
             style: TextButton.styleFrom(foregroundColor: AppColors.error),
-            child: const Text('Cancel order'),
+            child: Text(_order.cancelNeedsApproval ? 'Send request' : 'Cancel order'),
           ),
         ],
       ),
@@ -256,6 +262,7 @@ class _OrderDetailScreenState extends State<OrderDetailScreen>
           padding: const EdgeInsets.fromLTRB(18, 8, 18, 32),
           children: [
             _statusCard(),
+            ..._notices(),
             if (_awaitsOnlinePayment) ...[
               const SizedBox(height: 16),
               _onlinePaymentCard(),
@@ -278,7 +285,22 @@ class _OrderDetailScreenState extends State<OrderDetailScreen>
               const SizedBox(height: 16),
               _deliveryCard(),
             ],
-            if (_order.canConfirmReceived) ...[
+            if (_order.riderUserId != null) ...[
+              const SizedBox(height: 16),
+              ClayButton(
+                label: 'Message ${_order.riderName.isEmpty ? 'your rider' : _order.riderName}',
+                icon: Icons.chat_bubble_rounded,
+                filled: false,
+                onPressed: () => Navigator.of(context).push(MaterialPageRoute(
+                  builder: (_) => ConversationScreen(
+                    otherUserId: _order.riderUserId!,
+                    otherName: _order.riderName.isEmpty ? 'Your rider' : _order.riderName,
+                    orderRef: _order.groupId,
+                  ),
+                )),
+              ),
+            ],
+            if (_order.canConfirmReceived && !_order.problemOpen) ...[
               const SizedBox(height: 24),
               ClayButton(
                 label: 'I received my order',
@@ -286,10 +308,20 @@ class _OrderDetailScreenState extends State<OrderDetailScreen>
                 onPressed: _confirming ? null : _confirmReceived,
               ),
             ],
+            if (_order.canReportProblem) ...[
+              const SizedBox(height: 12),
+              ClayButton(
+                label: 'Report a problem',
+                icon: Icons.report_problem_rounded,
+                filled: false,
+                isLoading: _working,
+                onPressed: _working ? null : _reportProblem,
+              ),
+            ],
             if (_order.canCancel) ...[
               const SizedBox(height: 24),
               ClayButton(
-                label: 'Cancel this order',
+                label: _order.cancelNeedsApproval ? 'Ask the seller to cancel' : 'Cancel this order',
                 filled: false,
                 isLoading: _cancelling,
                 onPressed: _cancelling ? null : _cancel,
@@ -657,9 +689,121 @@ class _OrderDetailScreenState extends State<OrderDetailScreen>
                 : 'Reference ${_order.paymentReference}. Tap to see it full size.',
             style: const TextStyle(fontSize: 12, color: AppColors.textMuted),
           ),
+          if (_order.canResubmitPayment) ...[
+            const SizedBox(height: 12),
+            ClayButton(
+              label: 'Send a new receipt',
+              icon: Icons.upload_rounded,
+              isLoading: _working,
+              onPressed: _working ? null : _resubmitReceipt,
+            ),
+          ],
         ],
       ),
     );
+  }
+
+  /// What the buyer needs to know that the status alone does not say.
+  List<Widget> _notices() {
+    final notes = <(String, Color)>[];
+    if (_order.cancellationRequested) {
+      notes.add(('You asked to cancel. Waiting for the seller to answer.', AppColors.warning));
+    } else if (_order.cancellationNote.isNotEmpty && _order.status != 'cancelled') {
+      notes.add(('The seller declined your cancellation: ${_order.cancellationNote}', AppColors.textBody));
+    }
+    if (_order.paymentStatus == 'rejected') {
+      notes.add((
+        'The seller could not find your GCash payment${_order.paymentNote.isEmpty ? '' : ': ${_order.paymentNote}'}. '
+            'Check your GCash history and send a new receipt below.',
+        AppColors.error,
+      ));
+    }
+    if (_order.paymentStatus == 'refund_due') {
+      notes.add(('This order was cancelled after payment. The seller owes you a refund and will record it here once sent.', AppColors.warning));
+    }
+    if (_order.paymentStatus == 'refunded') {
+      notes.add((
+        'Refunded${_order.refundAmount == null ? '' : ' ₱${_order.refundAmount!.toStringAsFixed(2)}'}'
+            '${_order.refundReference.isEmpty ? '' : ', reference ${_order.refundReference}'}.',
+        AppColors.success,
+      ));
+    }
+    if (_order.problemOpen) {
+      notes.add(('You reported a problem. The seller is looking into it; the order stays open until they resolve it.', AppColors.warning));
+    } else if (_order.complaintNote.isNotEmpty) {
+      notes.add(('Problem resolved: ${_order.complaintNote}', AppColors.success));
+    }
+    return [
+      for (final (text, color) in notes) ...[
+        const SizedBox(height: 12),
+        ClaySunken(
+          padding: const EdgeInsets.all(12),
+          child: Text(text, style: TextStyle(fontSize: 13, height: 1.45, fontWeight: FontWeight.w600, color: color)),
+        ),
+      ],
+    ];
+  }
+
+  Future<String?> _ask(String title, String hint, {TextInputType? keyboard}) {
+    final controller = TextEditingController();
+    return showDialog<String>(
+      context: context,
+      builder: (context) => AlertDialog(
+        backgroundColor: AppColors.surface,
+        title: Text(title, style: const TextStyle(fontSize: 18, fontWeight: FontWeight.w700)),
+        content: TextField(
+          controller: controller,
+          autofocus: true,
+          keyboardType: keyboard,
+          maxLines: keyboard == null ? 2 : 1,
+          decoration: InputDecoration(hintText: hint),
+        ),
+        actions: [
+          TextButton(onPressed: () => Navigator.of(context).pop(), child: const Text('Back')),
+          TextButton(
+            onPressed: () {
+              final text = controller.text.trim();
+              if (text.isNotEmpty) Navigator.of(context).pop(text);
+            },
+            child: const Text('Send'),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Future<void> _resubmitReceipt() async {
+    final shot = await ImagePicker().pickImage(source: ImageSource.gallery, imageQuality: 80, maxWidth: 1800);
+    if (shot == null || !mounted) return;
+    final reference = await _ask('Reference number', 'From the GCash receipt, digits only', keyboard: TextInputType.number);
+    if (reference == null || !mounted) return;
+    setState(() => _working = true);
+    try {
+      final fresh = await OrderService.instance.resubmitPayment(_order.groupId, receiptPath: shot.path, reference: reference);
+      if (!mounted) return;
+      setState(() => _order = fresh);
+      _notify('New receipt sent. The seller will check it.');
+    } on ApiException catch (err) {
+      if (mounted) _notify(err.message);
+    } finally {
+      if (mounted) setState(() => _working = false);
+    }
+  }
+
+  Future<void> _reportProblem() async {
+    final reason = await _ask('What is wrong?', 'Torn sack, wrong rice, short weight…');
+    if (reason == null || !mounted) return;
+    setState(() => _working = true);
+    try {
+      final fresh = await OrderService.instance.reportProblem(_order.groupId, reason);
+      if (!mounted) return;
+      setState(() => _order = fresh);
+      _notify('Sent to the seller. The order stays open until they resolve it.');
+    } on ApiException catch (err) {
+      if (mounted) _notify(err.message);
+    } finally {
+      if (mounted) setState(() => _working = false);
+    }
   }
 
   Widget _totalRow(String label, double value) {

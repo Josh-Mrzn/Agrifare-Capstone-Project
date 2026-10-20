@@ -52,6 +52,8 @@ class OrderItem {
     required this.subtotal,
     required this.status,
     this.image = '',
+    this.riderUserId,
+    this.courierName = '',
   });
 
   /// This row's own id on the server.
@@ -70,6 +72,10 @@ class OrderItem {
   final String status;
   final String image;
 
+  /// The seller's delivery person on this line, when one is assigned.
+  final int? riderUserId;
+  final String courierName;
+
   String get imageUrl => ApiConfig.mediaUrl(image);
 
   factory OrderItem.fromJson(Map<String, dynamic> json) {
@@ -85,6 +91,8 @@ class OrderItem {
       subtotal: ((json['lineTotal'] ?? json['subtotal']) as num?)?.toDouble() ?? 0,
       status: (json['status'] ?? 'pending').toString(),
       image: (json['image'] ?? json['productImage'] ?? '').toString(),
+      riderUserId: (json['riderUserId'] as num?)?.toInt(),
+      courierName: (json['courierName'] ?? '').toString(),
     );
   }
 }
@@ -107,7 +115,49 @@ class OrderGroup {
     this.paymentReference = '',
     this.deliveryAddress = '',
     this.orderDate,
+    this.cancelNeedsApproval = false,
+    this.cancellationRequested = false,
+    this.problemOpen = false,
+    this.canResubmitPayment = false,
+    this.canReportProblem = false,
+    this.paymentNote = '',
+    this.cancellationNote = '',
+    this.complaintNote = '',
+    this.refundAmount,
+    this.refundReference = '',
   });
+
+  /// Cancelling now asks the seller rather than cancelling at once: money or
+  /// a receipt is involved, or the seller has started.
+  final bool cancelNeedsApproval;
+  final bool cancellationRequested;
+  final bool problemOpen;
+
+  /// The seller could not find the GCash payment; a new receipt can be sent.
+  final bool canResubmitPayment;
+  final bool canReportProblem;
+  final String paymentNote;
+  final String cancellationNote;
+  final String complaintNote;
+  final double? refundAmount;
+  final String refundReference;
+
+  /// The delivery person carrying an open part of this order, if any.
+  int? get riderUserId {
+    for (final item in items) {
+      if (item.riderUserId != null && {'confirmed', 'processing', 'shipped', 'delivered'}.contains(item.status)) {
+        return item.riderUserId;
+      }
+    }
+    return null;
+  }
+
+  String get riderName {
+    for (final item in items) {
+      if (item.riderUserId != null) return item.courierName;
+    }
+    return '';
+  }
 
   final String groupId;
   final String orderNumber;
@@ -180,6 +230,16 @@ class OrderGroup {
       paymentReference: (json['paymentReference'] ?? '').toString(),
       deliveryAddress: (json['deliveryAddress'] ?? '').toString(),
       orderDate: DateTime.tryParse((json['orderDate'] ?? '').toString()),
+      cancelNeedsApproval: json['cancelNeedsApproval'] == true,
+      cancellationRequested: json['cancellationRequested'] == true,
+      problemOpen: json['problemOpen'] == true,
+      canResubmitPayment: json['canResubmitPayment'] == true,
+      canReportProblem: json['canReportProblem'] == true,
+      paymentNote: (json['paymentNote'] ?? '').toString(),
+      cancellationNote: (json['cancellationNote'] ?? '').toString(),
+      complaintNote: (json['complaintNote'] ?? '').toString(),
+      refundAmount: (json['refund'] is Map) ? ((json['refund']['amount'] as num?)?.toDouble()) : null,
+      refundReference: (json['refund'] is Map) ? (json['refund']['reference'] ?? '').toString() : '',
     );
   }
 

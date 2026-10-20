@@ -163,6 +163,13 @@ class AuthService {
     return _messageFrom(body, 'Password updated.');
   }
 
+  /// Changes the account's display name.
+  Future<AuthUser> updateName(String name) async {
+    final body = await _api.put('/user/edit', {'name': name.trim()});
+    if (body is! Map<String, dynamic>) throw ApiException('Could not save your name.');
+    return AuthUser.fromJson(body);
+  }
+
   Future<AuthUser> me() async {
     final body = await _api.get('/user/me');
     return AuthUser.fromJson(body as Map<String, dynamic>);

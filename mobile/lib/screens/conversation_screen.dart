@@ -25,7 +25,12 @@ class ConversationScreen extends StatefulWidget {
     required this.otherName,
     this.conversationId,
     this.otherAvatarUrl = '',
+    this.orderRef,
   });
+
+  /// The order this thread is about, for a rider and a buyer, whose messages
+  /// belong to one delivery.
+  final String? orderRef;
 
   /// Null when the two have never spoken. The first sent message creates it.
   final String? conversationId;
@@ -115,6 +120,7 @@ class _ConversationScreenState extends State<ConversationScreen> {
         text: text,
         imagePath: imagePath,
         productId: productId,
+        orderRef: widget.orderRef,
       );
 
       if (!mounted) return;

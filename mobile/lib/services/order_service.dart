@@ -49,14 +49,38 @@ class OrderService {
     return body is Map && body['paid'] == true;
   }
 
-  /// The server decides whether cancelling is still allowed; the app only
-  /// hides the button when it already knows the answer is no.
+  /// The server decides whether cancelling is still allowed, and whether it
+  /// happens at once or goes to the seller as a request.
   Future<String> cancel(String groupId, String reason) async {
     final body = await _api.post('/buyer/orders/$groupId/cancel', {
       'reason': reason,
     });
 
-    if (body is Map && body['message'] != null) return body['message'].toString();
+    if (body is Map && body['cancellationOutcome'] == 'requested') {
+      return 'Request sent. The seller will approve it (and refund any payment) or tell you why not.';
+    }
     return 'Order cancelled.';
+  }
+
+  /// A new GCash receipt, after the seller could not find the first payment.
+  Future<OrderGroup> resubmitPayment(
+    String groupId, {
+    required String receiptPath,
+    required String reference,
+  }) async {
+    final body = await _api.postMultipart(
+      '/buyer/orders/$groupId/payment-proof',
+      fileField: 'paymentProof',
+      filePath: receiptPath,
+      fields: {'paymentReference': reference},
+    );
+    return OrderGroup.fromJson(body as Map<String, dynamic>);
+  }
+
+  /// Something wrong with what arrived. Holds the order open until the
+  /// seller resolves it.
+  Future<OrderGroup> reportProblem(String groupId, String reason) async {
+    final body = await _api.post('/buyer/orders/$groupId/problem', {'reason': reason});
+    return OrderGroup.fromJson(body as Map<String, dynamic>);
   }
 }

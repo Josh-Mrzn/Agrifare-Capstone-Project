@@ -40,6 +40,7 @@ class ChatService {
     String text = '',
     String? imagePath,
     String? productId,
+    String? orderRef,
   }) async {
     final body = await _api.postMultipart(
       '/chat/send',
@@ -50,6 +51,8 @@ class ChatService {
         if (text.isNotEmpty) 'text': text,
         // Turns the message into a product card the other side can tap.
         'productId': ?productId,
+        // A rider and a buyer talk only about a delivery: the order it is.
+        'orderRef': ?orderRef,
       },
     );
 

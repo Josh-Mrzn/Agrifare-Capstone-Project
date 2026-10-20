@@ -4,7 +4,11 @@ import '../models/notification_model.dart';
 import '../theme/app_theme.dart';
 import '../widgets/clay.dart';
 import 'chat_screen.dart';
+import 'order_detail_screen.dart';
 import 'orders_screen.dart';
+import 'rider_delivery_screen.dart';
+import '../services/api_client.dart';
+import '../services/order_service.dart';
 
 class NotificationsScreen extends StatefulWidget {
   const NotificationsScreen({super.key});
@@ -218,18 +222,42 @@ class _NotificationCard extends StatelessWidget {
 
   Future<void> _handleTap(BuildContext context) async {
     await NotificationModel.of(context).markRead(notification.id);
+    if (!context.mounted) return;
+
+    // The server writes each link for the app its reader uses:
+    // /orders/<groupId>, /messages/<conversationId>, /rider?order=<id>.
+    final link = Uri.tryParse(notification.link);
+    final segments = link?.pathSegments ?? const <String>[];
+
+    if (segments.length == 2 && segments.first == 'orders') {
+      try {
+        final order = await OrderService.instance.byGroupId(segments[1]);
+        if (!context.mounted) return;
+        Navigator.push(context, MaterialPageRoute(builder: (_) => OrderDetailScreen(order: order)));
+        return;
+      } on ApiException {
+        // Fall through to the list, which still shows it.
+      }
+    }
+    if (segments.isNotEmpty && segments.first == 'rider') {
+      final orderId = link?.queryParameters['order'];
+      if (orderId != null && orderId.isNotEmpty) {
+        if (!context.mounted) return;
+        Navigator.push(context, MaterialPageRoute(builder: (_) => RiderDeliveryScreen(orderId: orderId)));
+        return;
+      }
+    }
+    if (!context.mounted) return;
 
     switch (notification.type) {
       case NotificationType.order:
       case NotificationType.payment:
-        if (!context.mounted) return;
         Navigator.push(
           context,
           MaterialPageRoute(builder: (_) => const OrdersScreen()),
         );
         return;
       case NotificationType.message:
-        if (!context.mounted) return;
         Navigator.push(
           context,
           MaterialPageRoute(builder: (_) => const ChatScreen()),

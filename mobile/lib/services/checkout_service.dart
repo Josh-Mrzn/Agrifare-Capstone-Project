@@ -46,6 +46,7 @@ class CheckoutService {
     String? receiptPath,
     String paymentReference = '',
     String addressId = '',
+    String checkoutKey = '',
   }) async {
     final body = await _api.postMultipart(
       '/cart/checkout',
@@ -62,6 +63,9 @@ class CheckoutService {
         // address itself, so a client cannot send an order somewhere the buyer
         // never chose.
         if (addressId.isNotEmpty) 'addressId': addressId,
+        // The same key on a retry: the server returns the first attempt's
+        // order instead of placing a second one.
+        if (checkoutKey.isNotEmpty) 'checkoutKey': checkoutKey,
       },
     );
 
