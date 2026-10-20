@@ -308,16 +308,6 @@ export default function RiderPage() {
                         {sharing ? 'Sharing location. Tap to stop' : 'Share my location'}
                       </button>
 
-                      <label className="field">
-                        <span className="field-label">Who received it? <span className="optional">(optional)</span></span>
-                        <input
-                          className="input"
-                          value={notes[d.orderId] || ''}
-                          autoComplete="off"
-                          onChange={(e) => setNotes((n) => ({ ...n, [d.orderId]: e.target.value }))}
-                        />
-                      </label>
-
                       {d.status === 'processing' && (
                         <button type="button" className="btn btn-primary btn-lg btn-block" disabled={busy === d.orderId}
                           onClick={() => run(d.orderId, () => startDelivery(d.orderId), 'On the way. The buyer has been told.', 'Could not start the delivery.')}>
@@ -330,6 +320,15 @@ export default function RiderPage() {
 
                       {d.status === 'shipped' && (
                         <>
+                          <label className="field">
+                            <span className="field-label">Who received it? <span className="optional">(optional)</span></span>
+                            <input
+                              className="input"
+                              value={notes[d.orderId] || ''}
+                              autoComplete="off"
+                              onChange={(e) => setNotes((n) => ({ ...n, [d.orderId]: e.target.value }))}
+                            />
+                          </label>
                           <label className={`btn ${d.proofOfDelivery ? 'btn-secondary' : 'btn-primary'} btn-lg btn-block${busy === d.orderId ? ' is-disabled' : ''}`}>
                             <Camera size={18} aria-hidden="true" />
                             {busy === d.orderId ? 'Working…' : d.proofOfDelivery ? 'Retake photo' : '1. Take photo at the door'}
