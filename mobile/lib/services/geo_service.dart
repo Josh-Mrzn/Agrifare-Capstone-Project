@@ -74,3 +74,66 @@ class GeoService {
     return _barangays[cityCode] = list;
   }
 }
+
+/// What is at a pinned spot, matched to the province, city and barangay
+/// lists. Each part is empty when it could not be matched exactly, and the
+/// person chooses it themselves.
+class PinnedPlace {
+  const PinnedPlace({
+    required this.lat,
+    required this.lng,
+    this.found = false,
+    this.display = '',
+    this.province = '',
+    this.provinceCode = '',
+    this.city = '',
+    this.cityCode = '',
+    this.barangay = '',
+    this.street = '',
+  });
+
+  final double lat;
+  final double lng;
+  final bool found;
+  final String display;
+  final String province;
+  final String provinceCode;
+  final String city;
+  final String cityCode;
+  final String barangay;
+  final String street;
+
+  /// One line for the screen: the matched parts, or OpenStreetMap's own words.
+  String get summary {
+    final parts = [street, barangay, city, province].where((p) => p.isNotEmpty).toList();
+    if (parts.isNotEmpty) return parts.join(', ');
+    return display;
+  }
+
+  factory PinnedPlace.fromJson(Map<String, dynamic> json, double lat, double lng) => PinnedPlace(
+        lat: lat,
+        lng: lng,
+        found: json['found'] == true,
+        display: (json['display'] ?? '').toString(),
+        province: (json['province'] ?? '').toString(),
+        provinceCode: (json['provinceCode'] ?? '').toString(),
+        city: (json['city'] ?? '').toString(),
+        cityCode: (json['cityCode'] ?? '').toString(),
+        barangay: (json['barangay'] ?? '').toString(),
+        street: (json['street'] ?? '').toString(),
+      );
+}
+
+extension PinLookup on GeoService {
+  /// What is at this spot. Never throws for a lookup that found nothing - the
+  /// pin is still worth keeping without words.
+  Future<PinnedPlace> whatIsAt(double lat, double lng) async {
+    try {
+      final body = await ApiClient.instance.get('/geo/reverse', query: {'lat': '$lat', 'lng': '$lng'});
+      if (body is Map<String, dynamic>) return PinnedPlace.fromJson(body, lat, lng);
+    } on ApiException {
+      // Offline or the lookup service is down: the spot alone is returned.
+    }
+    return PinnedPlace(lat: lat, lng: lng);
+  }
+}

@@ -1,13 +1,16 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
+import 'package:latlong2/latlong.dart';
 
 import '../models/address.dart';
 import '../services/address_service.dart';
 import '../services/api_client.dart';
 import '../services/geo_service.dart';
-import '../services/location_service.dart';
 import '../theme/app_theme.dart';
 import '../widgets/clay.dart';
 import '../widgets/place_picker.dart';
+import 'pin_location_screen.dart';
 
 /// Saved delivery addresses.
 ///
@@ -48,6 +51,8 @@ class _AddressesScreenState extends State<AddressesScreen> {
         _addresses = addresses;
         _loading = false;
       });
+      // From checkout with nothing saved: go straight to adding one.
+      if (widget.selecting && addresses.isEmpty) unawaited(_openForm());
     } on ApiException catch (err) {
       if (!mounted) return;
       setState(() {
@@ -78,10 +83,16 @@ class _AddressesScreenState extends State<AddressesScreen> {
           : await AddressService.instance.update(existing.id, result);
 
       if (!mounted) return;
+      final before = _addresses.map((a) => a.id).toSet();
       setState(() {
         _addresses = list;
         _busy = false;
       });
+      // Added from checkout: that new address is the one to deliver to.
+      if (widget.selecting && existing == null) {
+        final added = list.where((a) => !before.contains(a.id)).toList();
+        if (added.isNotEmpty) Navigator.of(context).pop(added.first);
+      }
     } on ApiException catch (err) {
       if (!mounted) return;
       setState(() => _busy = false);
@@ -471,47 +482,52 @@ class _AddressFormState extends State<_AddressForm> {
     );
   }
 
-  /// Pins the door from the phone's own fix.
+  /// Pins the door on the map - from the phone's location or by moving the
+  /// map - and fills in the parts of the address the pin answers.
   ///
-  /// Only ever on a tap - the app does not reach for somebody's coordinates on
+  /// Only ever on a tap: the app does not reach for somebody's coordinates on
   /// its own.
-  Future<void> _pinHere() async {
+  Future<void> _pinOnMap() async {
     if (_pinning) return;
     setState(() => _pinning = true);
 
-    final result = await LocationService.instance.currentAddress();
+    final place = await Navigator.of(context).push<PinnedPlace>(
+      MaterialPageRoute(
+        builder: (_) => PinLocationScreen(
+          initial: _lat != null && _lng != null && _precision == 'exact' ? LatLng(_lat!, _lng!) : null,
+        ),
+      ),
+    );
     if (!mounted) return;
-
     setState(() => _pinning = false);
-
-    if (!result.isOk || result.lat == null) {
-      ScaffoldMessenger.of(context)
-        ..hideCurrentSnackBar()
-        ..showSnackBar(
-          SnackBar(
-            content: Text(result.message),
-            action: result.outcome == LocationOutcome.deniedForever
-                ? SnackBarAction(
-                    label: 'Settings',
-                    onPressed: LocationService.instance.openSettings,
-                  )
-                : null,
-          ),
-        );
-      return;
-    }
+    if (place == null) return;
 
     setState(() {
-      _lat = result.lat;
-      _lng = result.lng;
+      _lat = place.lat;
+      _lng = place.lng;
       _precision = 'exact';
+      // Only what matched the official lists is filled in; the rest stays as
+      // the buyer left it, to choose below.
+      if (place.provinceCode.isNotEmpty) {
+        _province = place.province;
+        _provinceCode = place.provinceCode;
+      }
+      if (place.cityCode.isNotEmpty) {
+        _city = place.city;
+        _cityCode = place.cityCode;
+        _barangay = place.barangay;
+      }
+      if (_line.text.trim().isEmpty && place.street.isNotEmpty) _line.text = place.street;
     });
 
+    final filled = place.cityCode.isNotEmpty;
     ScaffoldMessenger.of(context)
       ..hideCurrentSnackBar()
-      ..showSnackBar(
-        const SnackBar(content: Text('Marked where you are standing now.')),
-      );
+      ..showSnackBar(SnackBar(
+        content: Text(filled
+            ? 'Pinned. Check the details below and add your house number and landmark.'
+            : 'Pinned. Choose your province, city and barangay below.'),
+      ));
   }
 
   @override
@@ -551,7 +567,10 @@ class _AddressFormState extends State<_AddressForm> {
                   color: AppColors.textDark,
                 ),
               ),
-              const SizedBox(height: 20),
+              const SizedBox(height: 16),
+              // First: one tap on the map fills in most of the form below.
+              _pinRow(),
+              const SizedBox(height: 16),
               _field(_label, 'Label', hint: 'Home, Work, Bahay ni Nanay'),
               const SizedBox(height: 12),
               _field(
@@ -643,8 +662,6 @@ class _AddressFormState extends State<_AddressForm> {
                 lines: 2,
               ),
               const SizedBox(height: 16),
-              _pinRow(),
-              const SizedBox(height: 12),
               ClaySunken(
                 child: Row(
                   children: [
@@ -716,8 +733,9 @@ class _AddressFormState extends State<_AddressForm> {
                     Text(
                       exact
                           ? 'The map points at this exact spot.'
-                          : 'The map points at the barangay you chose above. '
-                              'The rider follows your street and landmark from there.',
+                          : 'Pin your door on the map and the province, city and '
+                              'barangay fill in by themselves. Without a pin, the rider '
+                              'is sent to the barangay and follows your street and landmark.',
                       style: const TextStyle(
                         fontSize: 11.5,
                         height: 1.4,
@@ -731,7 +749,7 @@ class _AddressFormState extends State<_AddressForm> {
           ),
           const SizedBox(height: 10),
           GestureDetector(
-            onTap: _pinning ? null : _pinHere,
+            onTap: _pinning ? null : _pinOnMap,
             behavior: HitTestBehavior.opaque,
             child: Container(
               width: double.infinity,
@@ -756,8 +774,8 @@ class _AddressFormState extends State<_AddressForm> {
                       // Named for what it actually does. "Pin here" invited
                       // somebody ordering from school to mark the school.
                       exact
-                          ? 'Standing here now? Re-mark the exact spot'
-                          : 'Standing here now? Mark the exact spot',
+                          ? 'Move the pin on the map'
+                          : 'Pin my location on the map',
                       textAlign: TextAlign.center,
                       style: const TextStyle(
                         fontSize: 12.5,

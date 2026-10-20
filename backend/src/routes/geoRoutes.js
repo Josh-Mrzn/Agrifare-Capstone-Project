@@ -1,36 +1,7 @@
 import express from 'express';
-import fs from 'fs';
-import path from 'path';
-import { fileURLToPath } from 'url';
-
-const __dirname = path.dirname(fileURLToPath(import.meta.url));
-const DATA_DIR = path.join(__dirname, '../data');
-
-/**
- * Philippine places, for the address picker.
- *
- * Read once into memory at startup: the three files are half a megabyte
- * together, and reading them from disk on every keystroke in a picker would be
- * the slowest part of typing an address.
- *
- * Built by src/scripts/buildPsgc.js from the PSA's PSGC. Rebuild when it is
- * republished - places are created and renamed every few years.
- */
-function load(name) {
-  try {
-    return JSON.parse(fs.readFileSync(path.join(DATA_DIR, name), 'utf-8'));
-  } catch (err) {
-    console.error(
-      `[geo] could not read ${name}. Run: node src/scripts/buildPsgc.js`,
-      err.message
-    );
-    return null;
-  }
-}
-
-const provinces = load('psgc-provinces.json') || [];
-const citiesByProvince = load('psgc-cities.json') || {};
-const barangaysByCity = load('psgc-barangays.json') || {};
+import { protect } from '../middleware/authMiddleware.js';
+import { provinces, citiesByProvince, barangaysByCity } from '../geo/psgc.js';
+import { reverseLookup } from '../services/geocodeService.js';
 
 const router = express.Router();
 
@@ -64,6 +35,20 @@ router.get('/cities/:code/barangays', (req, res) => {
   }
 
   return send(res, barangays);
+});
+
+/**
+ * What is at a pinned spot, matched to the lists above: the buyer drops a pin
+ * (or uses their location) and the address form fills itself in. Signed in
+ * only, since every lookup goes out to OpenStreetMap.
+ */
+router.get('/reverse', protect, async (req, res) => {
+  const lat = Number(req.query.lat);
+  const lng = Number(req.query.lng);
+  if (!Number.isFinite(lat) || !Number.isFinite(lng) || Math.abs(lat) > 90 || Math.abs(lng) > 180) {
+    return res.status(400).json({ success: false, message: 'That is not a valid spot on the map.' });
+  }
+  return send(res, await reverseLookup(lat, lng));
 });
 
 /** Says whether the data was built, so a missing file is visible early. */

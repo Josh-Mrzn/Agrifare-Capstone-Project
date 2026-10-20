@@ -1,4 +1,5 @@
 import GeoCache from '../models/GeoCache.js';
+import { matchAddress } from '../geo/psgc.js';
 
 /**
  * Turns a barangay, city and province into a point on the map.
@@ -128,4 +129,63 @@ export async function locateArea({ barangay, city, province }) {
   }
 
   return hit ? { lat: hit.lat, lng: hit.lng } : null;
+}
+
+const REVERSE = 'https://nominatim.openstreetmap.org/reverse';
+
+// Recent answers, by the spot rounded to about 10 m. A buyer dragging the map
+// back and forth asks about the same few places.
+const reverseCache = new Map();
+const REVERSE_CACHE_SIZE = 500;
+
+async function askReverse(lat, lng) {
+  const url = new URL(REVERSE);
+  url.searchParams.set('format', 'json');
+  url.searchParams.set('lat', String(lat));
+  url.searchParams.set('lon', String(lng));
+  url.searchParams.set('zoom', '18');
+  url.searchParams.set('addressdetails', '1');
+
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), TIMEOUT_MS);
+  try {
+    const res = await fetch(url, {
+      headers: { 'User-Agent': USER_AGENT, Accept: 'application/json', 'Accept-Language': 'en' },
+      signal: controller.signal,
+    });
+    if (!res.ok) return null;
+    const body = await res.json();
+    if (!body || body.error || !body.address) return null;
+    return body;
+  } catch {
+    return null;
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
+/**
+ * What is at a pinned spot: the PSGC province, city and barangay it falls in
+ * (each empty when OpenStreetMap's name does not match one exactly), the
+ * street, and OpenStreetMap's own description. The pin itself is always kept;
+ * the words are a convenience the buyer can correct.
+ */
+export async function reverseLookup(lat, lng) {
+  const key = `${lat.toFixed(4)},${lng.toFixed(4)}`;
+  if (reverseCache.has(key)) return reverseCache.get(key);
+
+  const body = await polite(() => askReverse(lat, lng));
+  const result = {
+    lat,
+    lng,
+    found: Boolean(body),
+    display: body?.display_name || '',
+    ...matchAddress(body?.address || {}),
+  };
+
+  if (body) {
+    if (reverseCache.size >= REVERSE_CACHE_SIZE) reverseCache.delete(reverseCache.keys().next().value);
+    reverseCache.set(key, result);
+  }
+  return result;
 }

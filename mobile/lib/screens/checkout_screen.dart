@@ -296,7 +296,7 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
             const ClaySkeleton(height: 44)
           else if (_address == null)
             const Text(
-              'No address yet. Tap to add one — the rider needs somewhere to bring it.',
+              'No address yet. Tap to add one and pin your door on the map.',
               style: TextStyle(
                 fontSize: 13.5,
                 color: AppColors.textMuted,
@@ -333,6 +333,13 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
                 height: 1.45,
               ),
             ),
+            if (!_address!.isExact) ...[
+              const SizedBox(height: 6),
+              const Text(
+                'Not pinned on the map yet. Tap, then edit the address and pin your door, so the rider finds it.',
+                style: TextStyle(fontSize: 12, height: 1.4, color: AppColors.warning),
+              ),
+            ],
             if (_address!.notes.isNotEmpty) ...[
               const SizedBox(height: 3),
               Text(
