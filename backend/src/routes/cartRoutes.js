@@ -4,7 +4,8 @@ import upload from '../middleware/multerMiddleware.js';
 import * as cartService from '../services/cartService.js';
 
 const router = express.Router();
-router.use(protect);
+// A cart belongs to a buyer; sellers, riders and admins do not shop.
+router.use(protect, authorizeRoles('buyer'));
 
 const handle = (fn) => async (req, res) => {
   try {
@@ -37,11 +38,10 @@ router.delete('/', handle((req) => cartService.clearCart(req.user.userId)));
 // folder, reachable only through the authenticated /api/files route.
 router.post(
   '/checkout',
-  // Sellers and riders have accounts too, but an order is placed by a buyer.
-  authorizeRoles('buyer'),
   upload.single('paymentProof'),
   handle((req) => cartService.checkout(req.user.userId, {
     ...(req.body || {}),
+    checkoutKey: req.body?.checkoutKey || req.get('Idempotency-Key') || '',
     paymentProof: req.file ? `/api/files/${req.file.filename}` : '',
   })),
 );

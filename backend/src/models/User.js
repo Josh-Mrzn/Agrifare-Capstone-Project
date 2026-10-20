@@ -113,13 +113,27 @@ const userSchema = new mongoose.Schema({
   status: {
     type: String,
     // 'rejected': a seller application a Super Admin turned down.
-    enum: ['active', 'suspended', 'pending', 'rejected'],
+    // 'deactivated': closed by a Super Admin in place of deleting it, so the
+    // orders, reviews and audit entries that name this account still can.
+    enum: ['active', 'suspended', 'pending', 'rejected', 'deactivated'],
     default: function () {
       return this.role === 'seller' ? 'pending' : 'active';
     }
   },
   /** Why a seller application was rejected, shown to them at sign-in. */
   statusReason: { type: String, trim: true, default: '' },
+  /**
+   * A seller's application. A new seller signs in to a limited account,
+   * fills in their shop and uploads a permit, then submits it; only a
+   * submitted application with a verified permit can be approved. Sellers
+   * approved before this existed have no submittedAt and stay active.
+   */
+  application: {
+    submittedAt: { type: Date, default: null },
+    decidedAt: { type: Date, default: null },
+    decidedBy: { type: Number, default: null },
+  },
+  deactivatedAt: { type: Date, default: null },
   userId: { type: Number, unique: true },
   lastLogin: {
     type: Date

@@ -3,42 +3,85 @@ import { createMessage, getMessagesByConversationId, PRODUCT_CARD_FIELDS } from 
 import User from '../models/User.js';
 import Product from '../models/Product.js';
 import { Message } from '../models/Chat.js';
-import * as notificationRepo from '../repositories/notificationRepository.js';
+import mongoose from 'mongoose';
 
-const allowedRoles = ['superadmin', 'seller', 'buyer', 'rider'];
+import Order from '../models/Order.js';
+import { notify, links } from './notify.js';
 
-// 1. Fixed: Cast to Number to match numeric userId in User Schema
-const validateParticipantsByUserId = async (senderUserId, receiverUserId) => {
-  // Nobody messages themselves. This is not a nicety: a client that cannot
-  // work out who the other person is falls back to the first participant -
-  // itself - and every reply then goes to the sender. Refusing here turns a
-  // silent, confusing wrong into a visible error.
-  if (Number(senderUserId) === Number(receiverUserId)) {
-    throw new Error('You cannot message yourself.');
+/** Order statuses during which a rider and the buyer may talk. */
+const DELIVERY_OPEN = ['confirmed', 'processing', 'shipped', 'delivered'];
+
+/**
+ * Who may message whom.
+ *
+ *   buyer  <-> seller        about anything (a shop and its customers)
+ *   seller <-> their rider   only riders the seller employs
+ *   rider  <-> buyer         only about a delivery assigned to that rider,
+ *                            in a thread tied to that order
+ *   Super Admin <-> anyone   support
+ *
+ * Everything else - buyer to buyer, shop to shop, a rider to another shop -
+ * is refused, so the chat cannot be used to reach people with no business
+ * together. Returns the order the thread is about, when there is one.
+ */
+export async function chatPermission(sender, receiver, { orderRef = '' } = {}) {
+  if (sender.userId === receiver.userId) throw new Error('You cannot message yourself.');
+  if (receiver.status !== 'active' && receiver.role !== 'superadmin') {
+    throw new Error('This account is not available for messages.');
+  }
+  if (sender.role === 'seller' && sender.status !== 'active' && receiver.role !== 'superadmin') {
+    throw new Error('Your shop can message customers once it is approved.');
   }
 
+  const roles = [sender.role, receiver.role].sort().join('+');
+  if (sender.role === 'superadmin' || receiver.role === 'superadmin') return null;
+  if (roles === 'buyer+seller') return null;
+
+  if (roles === 'rider+seller') {
+    const rider = sender.role === 'rider' ? sender : receiver;
+    const seller = sender.role === 'seller' ? sender : receiver;
+    if (rider.employedBy !== seller.userId) throw new Error('You can only message delivery people who work for you.');
+    return null;
+  }
+
+  if (roles === 'buyer+rider') {
+    const rider = sender.role === 'rider' ? sender : receiver;
+    const buyer = sender.role === 'buyer' ? sender : receiver;
+    if (!orderRef) throw new Error('Messages with a delivery person are sent from the order.');
+    const order = await Order.findOne({
+      $or: [{ groupId: orderRef }, ...(mongoose.isValidObjectId(orderRef) ? [{ _id: orderRef }] : [])],
+      buyerUserId: buyer.userId,
+      'delivery.riderUserId': rider.userId,
+      status: { $in: DELIVERY_OPEN },
+    }).select('orderNumber groupId');
+    if (!order) throw new Error('This delivery is finished or is not assigned to this delivery person.');
+    return order;
+  }
+
+  throw new Error('Messages are only for buyers and shops, shops and their delivery people, and a delivery in progress.');
+}
+
+const validateParticipantsByUserId = async (senderUserId, receiverUserId, options = {}) => {
   const sender = await User.findOne({ userId: Number(senderUserId) });
   const receiver = await User.findOne({ userId: Number(receiverUserId) });
 
   if (!sender || !receiver) {
-    throw new Error(`Sender (${senderUserId}) or receiver (${receiverUserId}) not found.`);
+    throw new Error('That person could not be found.');
   }
-  if (!allowedRoles.includes(sender.role) || !allowedRoles.includes(receiver.role)) {
-    throw new Error('Unauthorized role for chat participants.');
-  }
-  return { sender, receiver };
+  const order = await chatPermission(sender, receiver, options);
+  return { sender, receiver, order };
 };
 
-// 2. Fixed: This was likely declared twice in your file causing the crash
-const getOrCreateConversationByUserId = async (senderUserId, receiverUserId) => {
-  const { sender, receiver } = await validateParticipantsByUserId(senderUserId, receiverUserId);
-  
+const getOrCreateConversationByUserId = async (senderUserId, receiverUserId, options = {}) => {
+  const { sender, receiver, order } = await validateParticipantsByUserId(senderUserId, receiverUserId, options);
+
   // Use MongoDB _ids for the conversation relationships
-  const participantIds = [sender._id, receiver._id].sort(); 
-  let conversation = await findConversation(participantIds);
+  const participantIds = [sender._id, receiver._id].sort();
+  const orderRef = order ? (order.groupId || String(order._id)) : '';
+  let conversation = await findConversation(participantIds, orderRef);
 
   if (!conversation) {
-    conversation = await createConversation(participantIds);
+    conversation = await createConversation(participantIds, { orderRef, orderNumber: order?.orderNumber || '' });
   }
   return { conversation, sender, receiver };
 };
@@ -52,7 +95,11 @@ const summarise = (text, kind, productName) => {
 
 // 3. Main Export for Sockets
 export const sendMessageByUserId = async (senderUserId, receiverUserId, text, mediaUrl, options = {}) => {
-  const { conversation, sender, receiver } = await getOrCreateConversationByUserId(senderUserId, receiverUserId);
+  const { conversation, sender, receiver } = await getOrCreateConversationByUserId(
+    senderUserId,
+    receiverUserId,
+    { orderRef: options.orderRef || '' },
+  );
 
   // A product message points at a real listing or it is not one. Checking here
   // rather than trusting the id keeps a broken card out of the thread, where
@@ -76,12 +123,12 @@ export const sendMessageByUserId = async (senderUserId, receiverUserId, text, me
   );
   await updateLastMessage(conversation._id, message._id);
 
-  await notificationRepo.createNotification({
+  await notify({
     userId: receiver.userId,
     type: 'MESSAGE',
     title: `New message from ${sender.name}`,
     body: summarise(text, kind, product?.name),
-    link: `/client?tab=Messages&conversation=${conversation._id}`,
+    link: links.messages(receiver.role, conversation._id),
   });
 
   return await message.populate([

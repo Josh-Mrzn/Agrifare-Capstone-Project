@@ -23,6 +23,8 @@ const statusHistoryEntrySchema = new mongoose.Schema({
   status: { type: String, required: true },
   changedAt: { type: Date, default: Date.now },
   reason: { type: String, default: '' },
+  /** Who moved it: seller, buyer, rider or system (the nightly job). */
+  by: { type: String, default: '' },
 }, { _id: false });
 
 const orderSchema = new mongoose.Schema({
@@ -116,8 +118,17 @@ const orderSchema = new mongoose.Schema({
    * unpaid, or paid but not yet shipped.
    *   unpaid        - nothing received yet (the COD default)
    *   proof_sent    - buyer uploaded a GCash screenshot, waiting on the seller
-   *   paid          - the seller confirmed the money landed in their account
+   *   paid          - the money is in: the seller confirmed a GCash transfer,
+   *                   PayMongo confirmed an online payment, or the rider
+   *                   collected the exact cash due at the door
    *   rejected      - the seller checked and the payment was not there
+   *   refund_due    - the order was cancelled after money moved; the seller
+   *                   owes it back
+   *   refunded      - the seller recorded the refund
+   *
+   * Which moves are allowed, and who may make them, is PAYMENT_TRANSITIONS in
+   * services/orderRules.js. Order status and payment status are two ledgers;
+   * that file is where they are made to agree.
    */
   /**
    * Live delivery tracking, used once the order is `shipped`. The courier's app
@@ -174,13 +185,75 @@ const orderSchema = new mongoose.Schema({
      * separately. Private, like a receipt - the buyer's doorway is on it.
      */
     proofOfDelivery: { type: String, default: '' },
+    proofUploadedAt: { type: Date },
     deliveredAt: { type: Date },
     deliveryNote: { type: String, trim: true, default: '' },
+    /** Who recorded the delivery: the rider's or the seller's userId. */
+    deliveredBy: { type: Number, default: null },
+
+    /**
+     * The rider's answer to an assignment. 'assigned' waits for them;
+     * 'declined' hands the order back to the seller to choose someone else.
+     * An order can only go out for delivery with an accepted rider (or a
+     * named courier).
+     */
+    assignmentStatus: { type: String, enum: ['', 'assigned', 'accepted', 'declined'], default: '' },
+    acceptedAt: { type: Date },
+    declinedAt: { type: Date },
+    declineReason: { type: String, trim: true, default: '' },
+    declinedBy: { type: Number, default: null },
+  },
+
+  /**
+   * Cash on delivery, as the rider recorded it at the door. The payment is
+   * marked paid only when the amount matches what was due; a short or missing
+   * collection is kept here and left for the seller to resolve.
+   */
+  codCollection: {
+    amount: { type: Number, default: null },
+    collectedAt: { type: Date },
+    riderUserId: { type: Number, default: null },
+    note: { type: String, trim: true, default: '' },
+  },
+
+  /**
+   * A buyer asking to call off an order after money moved (or while a
+   * receipt is being checked). The seller approves or rejects it; until then
+   * the order cannot be confirmed or completed.
+   */
+  cancellation: {
+    status: { type: String, enum: ['none', 'requested', 'approved', 'rejected'], default: 'none' },
+    reason: { type: String, trim: true, default: '' },
+    requestedAt: { type: Date },
+    decidedAt: { type: Date },
+    decidedBy: { type: Number, default: null },
+    decisionNote: { type: String, trim: true, default: '' },
+  },
+
+  /** The refund the seller recorded for a cancelled, paid order. */
+  refund: {
+    amount: { type: Number, default: null },
+    reference: { type: String, trim: true, default: '' },
+    recordedAt: { type: Date },
+    recordedBy: { type: Number, default: null },
+  },
+
+  /**
+   * A buyer's "something is wrong" on a delivered order. While open it
+   * pauses automatic completion; the seller resolves it.
+   */
+  complaint: {
+    status: { type: String, enum: ['none', 'open', 'resolved'], default: 'none' },
+    reason: { type: String, trim: true, default: '' },
+    note: { type: String, trim: true, default: '' },
+    openedAt: { type: Date },
+    resolvedAt: { type: Date },
+    resolutionNote: { type: String, trim: true, default: '' },
   },
 
   paymentStatus: {
     type: String,
-    enum: ['unpaid', 'proof_sent', 'paid', 'rejected'],
+    enum: ['unpaid', 'proof_sent', 'paid', 'rejected', 'refund_due', 'refunded'],
     default: 'unpaid',
   },
   paymentProof: { type: String, default: '' },
@@ -201,7 +274,9 @@ const orderSchema = new mongoose.Schema({
   paymentHistory: {
     type: [{
       _id: false,
-      status: { type: String, enum: ['paid', 'rejected'], required: true },
+      status: { type: String, enum: ['unpaid', 'proof_sent', 'paid', 'rejected', 'refund_due', 'refunded'], required: true },
+      /** What happened: review, resubmit, paymongo, cod, correction, cancellation, refund. */
+      kind: { type: String, default: '' },
       amount: { type: Number, default: 0 },
       reference: { type: String, default: '' },
       note: { type: String, default: '' },
@@ -266,6 +341,10 @@ orderSchema.index({ status: 1 });
 orderSchema.index({ orderDate: -1 });
 orderSchema.index({ paymentReference: 1 }, { sparse: true });
 orderSchema.index({ paymongoCheckoutId: 1 }, { sparse: true });
+// The rider's own delivery list.
+orderSchema.index({ 'delivery.riderUserId': 1, status: 1 });
+// The daily automatic-completion check.
+orderSchema.index({ status: 1, 'delivery.deliveredAt': 1 });
 
 const Order = mongoose.model('Order', orderSchema);
 export default Order;

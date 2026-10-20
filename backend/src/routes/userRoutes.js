@@ -1,4 +1,5 @@
 import express from 'express';
+import { submitSellerApplicationService } from '../services/userService.js';
 import { protect } from '../middleware/authMiddleware.js';
 import { passwordLimiter } from '../middleware/rateLimiter.js';
 import { addressService } from '../services/addressService.js';
@@ -23,6 +24,14 @@ router.get('/me', protect, getMe);
 router.put('/edit', protect, profileUpload, updateProfile);
 router.put('/reset-password', protect, passwordLimiter, updatePassword);
 router.get('/login-history', protect, getLoginHistory);
+// A seller sends their application for review (or again, after a rejection).
+router.post('/seller-application', protect, async (req, res) => {
+  try {
+    res.json(await submitSellerApplicationService(req.user.userId));
+  } catch (error) {
+    res.status(400).json({ error: error.message });
+  }
+});
 
 // ---- Saved delivery addresses ----
 const addresses = (fn) => async (req, res) => {

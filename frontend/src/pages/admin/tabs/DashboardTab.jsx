@@ -2,9 +2,10 @@ import React, { useEffect, useState } from 'react';
 import { Boxes, ChevronRight, Package, ShoppingCart, Wallet } from 'lucide-react';
 import BarList from '../../../components/BarList';
 import {
-  fetchMyProducts, fetchInventorySummary, fetchMyOrders, fetchMyOrderAnalytics,
+  fetchMyProducts, fetchInventorySummary, fetchMyOrders,
 } from '../../../services/clientApi';
-import { wholePeso, number, formatDate, monthName } from '../../../utils/format';
+import { fetchSection } from '../../../services/analyticsApi';
+import { wholePeso, number, formatDate } from '../../../utils/format';
 import { STATUS_LABEL, statusBadge } from '../orderStatus';
 
 const asList = (data, key) => (Array.isArray(data) ? data : data?.[key] || []);
@@ -18,7 +19,9 @@ export default function DashboardTab({ onNavigate }) {
       fetchMyProducts().catch(() => ({ data: [] })),
       fetchInventorySummary().catch(() => ({ data: null })),
       fetchMyOrders().catch(() => ({ data: [] })),
-      fetchMyOrderAnalytics().catch(() => ({ data: null })),
+      // Six months, by month, from the analytics module: the same definition
+      // of "sales" as the Analytics page and the reports.
+      fetchSection('/analytics/seller', 'overview', { preset: '6m', granularity: 'month', compare: 'previous' }).catch(() => ({ data: null })),
     ]).then(([prod, inv, ord, ana]) => {
       if (!mounted) return;
       setData({
@@ -50,16 +53,20 @@ export default function DashboardTab({ onNavigate }) {
   const soldOut = products.filter((p) => p.status !== 'inactive' && p.stock <= 0);
   const activeProducts = products.filter((p) => p.status !== 'inactive');
 
-  const monthly = analytics?.monthlyIncome || [];
-  const change = (() => {
-    if (monthly.length < 2) return null;
-    const [prev, last] = monthly.slice(-2).map((m) => m.income);
-    return prev ? Math.round(((last - prev) / prev) * 100) : null;
-  })();
+  const monthly = analytics?.series || [];
+  const salesKpi = analytics?.kpis?.find((k) => k.id === 'sales');
+  const change = salesKpi?.change?.pct == null ? null : Math.round(salesKpi.change.pct);
+  const monthLabel = (iso) => new Date(iso).toLocaleDateString('en-PH', { month: 'long', timeZone: 'Asia/Manila' });
+  const refundsDue = orders.filter((o) => o.paymentStatus === 'refund_due');
+  const cancelRequests = orders.filter((o) => o.cancellation?.status === 'requested');
+  const problems = orders.filter((o) => o.complaint?.status === 'open');
 
   const todo = [
     pending.length && { id: 'pending', to: 'orders', text: `${pending.length} new order${pending.length > 1 ? 's' : ''} to accept` },
     receipts.length && { id: 'receipts', to: 'orders', text: `${receipts.length} GCash receipt${receipts.length > 1 ? 's' : ''} to check` },
+    cancelRequests.length && { id: 'cancel', to: 'orders', text: `${cancelRequests.length} cancellation request${cancelRequests.length > 1 ? 's' : ''} to answer` },
+    refundsDue.length && { id: 'refund', to: 'orders', text: `${refundsDue.length} order line${refundsDue.length > 1 ? 's' : ''} waiting for a refund` },
+    problems.length && { id: 'problem', to: 'orders', text: `${problems.length} reported problem${problems.length > 1 ? 's' : ''} to resolve` },
     toShip.length && { id: 'ship', to: 'orders', text: `${toShip.length} order${toShip.length > 1 ? 's' : ''} ready to send out` },
     lowStock.length && { id: 'low', to: 'inventory', text: `${lowStock.length} product${lowStock.length > 1 ? 's' : ''} running low` },
     soldOut.length && { id: 'out', to: 'inventory', text: `${soldOut.length} product${soldOut.length > 1 ? 's' : ''} sold out` },
@@ -72,10 +79,10 @@ export default function DashboardTab({ onNavigate }) {
       <div className="stats">
         <button type="button" className="stat" onClick={() => onNavigate('analytics')}>
           <span className="stat-icon"><Wallet size={19} aria-hidden="true" /></span>
-          <span className="stat-label">Sales</span>
-          <span className="stat-value">{wholePeso(analytics?.totalSales)}</span>
+          <span className="stat-label">Sales, last 6 months</span>
+          <span className="stat-value">{wholePeso(salesKpi?.value)}</span>
           <span className={`stat-note${change > 0 ? ' is-up' : change < 0 ? ' is-down' : ''}`}>
-            {change == null ? 'From completed orders' : `${change > 0 ? '+' : ''}${change}% vs last month`}
+            {change == null ? 'From completed orders' : `${change > 0 ? '+' : ''}${change}% vs the 6 months before`}
           </span>
         </button>
         <button type="button" className="stat stat--gold" onClick={() => onNavigate('orders')}>
@@ -127,12 +134,12 @@ export default function DashboardTab({ onNavigate }) {
           <section className="panel">
             <div className="panel-head"><div><span className="eyebrow">Revenue</span><h2>Sales by month</h2></div></div>
             <div className="panel-body">
-              {monthly.length === 0 ? (
+              {!monthly.some((m) => m.sales > 0) ? (
                 <p className="muted">Completed orders will show here, month by month.</p>
               ) : (
                 <BarList
                   label="Sales by month"
-                  rows={monthly.map((m) => ({ key: `${m.year}-${m.month}`, label: monthName(m.month), value: m.income }))}
+                  rows={monthly.map((m) => ({ key: m.start, label: `${monthLabel(m.start)}${m.partial ? ' (so far)' : ''}`, value: m.sales }))}
                   format={wholePeso}
                 />
               )}

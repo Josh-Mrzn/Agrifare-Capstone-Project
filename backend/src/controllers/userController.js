@@ -25,7 +25,7 @@ export const updateProfile = async (req, res) => {
       return res.status(401).json({ message: 'Unauthorized' });
     }
 
-    const result = await updateProfileService(userId, req.body, req.files || {});
+    const result = await updateProfileService(userId, req.body, req.files || {}, req.user.role);
 
     res.json(result);
   } catch (error) {

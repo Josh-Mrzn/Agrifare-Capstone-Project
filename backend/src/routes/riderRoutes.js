@@ -1,5 +1,5 @@
 import express from 'express';
-import { protect, authorizeRoles } from '../middleware/authMiddleware.js';
+import { protect, authorizeRoles, requireActiveSeller } from '../middleware/authMiddleware.js';
 import upload from '../middleware/multerMiddleware.js';
 import { riderService } from '../services/riderService.js';
 import * as deliveryService from '../services/deliveryService.js';
@@ -16,7 +16,7 @@ const handle = (fn) => async (req, res) => {
 };
 
 // ---- The seller's side: who works for them, and who carries what ----
-const sellerOnly = authorizeRoles('seller', 'superadmin');
+const sellerOnly = [authorizeRoles('seller'), requireActiveSeller];
 
 router.get('/', sellerOnly, handle((req) => riderService.list(req.user.userId)));
 router.post('/', sellerOnly, handle((req) => riderService.add(req.user.userId, req.body || {})));
@@ -34,7 +34,17 @@ router.put('/assign/:orderId', sellerOnly, handle((req) =>
 const riderOnly = authorizeRoles('rider');
 
 router.get('/me/deliveries', riderOnly, handle((req) =>
-  riderService.myDeliveries(req.user.userId)));
+  riderService.myDeliveries(req.user.userId, { scope: req.query.scope === 'history' ? 'history' : 'active' })));
+router.get('/me/deliveries/:orderId', riderOnly, handle((req) =>
+  riderService.delivery(req.user.userId, req.params.orderId)));
+router.post('/me/deliveries/:orderId/accept', riderOnly, handle((req) =>
+  riderService.accept(req.user.userId, req.params.orderId)));
+router.post('/me/deliveries/:orderId/decline', riderOnly, handle((req) =>
+  riderService.decline(req.user.userId, req.params.orderId, req.body?.reason)));
+router.post('/me/deliveries/:orderId/start', riderOnly, handle((req) =>
+  riderService.start(req.user.userId, req.params.orderId)));
+router.post('/me/deliveries/:orderId/delivered', riderOnly, handle((req) =>
+  riderService.markDelivered(req.user.userId, req.params.orderId, req.body || {})));
 
 /**
  * The position, pushed while driving.
@@ -56,7 +66,7 @@ router.post(
   '/me/deliveries/:orderId/proof',
   riderOnly,
   upload.single('proof'),
-  handle((req) => riderService.recordDelivery(req.user.userId, req.params.orderId, {
+  handle((req) => riderService.uploadProof(req.user.userId, req.params.orderId, {
     proofPath: req.file ? `/api/files/${req.file.filename}` : '',
     note: req.body?.note,
   })),

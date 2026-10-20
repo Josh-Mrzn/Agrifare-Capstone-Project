@@ -5,7 +5,25 @@ import LoginSession from '../models/LoginSession.js';
 import { emailVerificationService } from './passwordResetService.js';
 import { claimSendSlot } from './sendCooldown.js';
 
-function signToken(user) {
+/**
+ * Which app each role signs in to. Buyers shop on the phone; sellers and
+ * Super Admins run their shop and the platform on the web; riders work from
+ * the phone and may also use the web delivery page.
+ */
+export const CLIENTS_FOR_ROLE = {
+  buyer: ['mobile'],
+  seller: ['web'],
+  superadmin: ['web'],
+  rider: ['mobile', 'web'],
+};
+
+const WRONG_APP = {
+  buyer: 'Buyer accounts use the AgriFair mobile app. Web access is for sellers and super admins.',
+  seller: 'Seller accounts use the AgriFair website. The mobile app is for buyers and delivery people.',
+  superadmin: 'Super Admin accounts use the AgriFair website.',
+};
+
+function signToken(user, client) {
   const secret = process.env.JWT_SECRET;
   if (!secret) throw new Error('JWT_SECRET is not configured');
 
@@ -13,7 +31,10 @@ function signToken(user) {
     {
       userId: user.userId,
       email: user.email,
-      role: user.role
+      role: user.role,
+      // The app it was issued to. The API refuses it from a role that does
+      // not belong in that app, whatever the client screens allow.
+      cl: client,
     },
     secret,
     { expiresIn: process.env.JWT_EXPIRES_IN || '1d' }
@@ -80,8 +101,13 @@ export const authService = {
     if (requestedRole === 'superadmin' || requestedRole === 'rider') {
       throw new Error('That account type cannot be created by signing up.');
     }
+    // Said explicitly, never assumed: a missing role used to make everyone a
+    // pending seller, including buyers on an app that forgot to send it.
     const allowedSelfRoles = ['buyer', 'seller'];
-    const role = allowedSelfRoles.includes(requestedRole) ? requestedRole : 'seller';
+    if (!allowedSelfRoles.includes(requestedRole)) {
+      throw new Error('Choose whether you are signing up to buy or to sell.');
+    }
+    const role = requestedRole;
     const status = role === 'seller' ? 'pending' : 'active';
 
     const existingUser = await authRepository.findByEmail(cleanEmail);
@@ -223,22 +249,22 @@ export const authService = {
       throw err;
     }
 
-    if (user.status === 'rejected') {
-      throw new Error(
-        `Your seller application was not approved${user.statusReason ? `: ${user.statusReason}` : '.'}`
-      );
+    if (user.status === 'deactivated') {
+      const err = new Error('This account has been closed. Contact AgriFair support.');
+      err.code = 'ACCOUNT_DEACTIVATED';
+      throw err;
     }
 
-    if (user.role === 'seller' && user.status === 'pending') {
-      throw new Error('Your seller account is pending Super Admin approval.');
+    // Each role signs in to its own app.
+    if (!(CLIENTS_FOR_ROLE[user.role] || []).includes(client)) {
+      const err = new Error(WRONG_APP[user.role] || 'This account cannot sign in here.');
+      err.code = 'WRONG_APP';
+      throw err;
     }
 
-    // Buyers belong in the mobile app; the web portal is for sellers and super
-    // admins. This used to reject buyers everywhere, which left them unable to
-    // sign in at all once the app existed.
-    if (user.role === 'buyer' && client !== 'mobile') {
-      throw new Error('Buyer accounts use the AgriFair mobile app. Web access is for sellers and super admins.');
-    }
+    // A seller still applying (or turned down) signs in to a limited account:
+    // they can finish their application, fix what was rejected and submit it,
+    // but not list rice or take orders until a Super Admin approves it.
 
     // Audit bookkeeping must never block a valid sign-in.
     try {
@@ -252,11 +278,14 @@ export const authService = {
       console.error('Could not record login session:', err.message);
     }
 
-    const token = signToken(user);
+    const token = signToken(user, client);
 
     return {
       token,
-      user: toUserResponse(user)
+      user: toUserResponse(user, user.role === 'seller' ? {
+        statusReason: user.statusReason || '',
+        applicationSubmittedAt: user.application?.submittedAt || null,
+      } : {})
     };
   },
 

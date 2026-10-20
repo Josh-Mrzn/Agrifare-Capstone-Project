@@ -26,13 +26,12 @@ export const updateUser = async (id, data) => {
   return await User.findOneAndUpdate(query, data, { new: true }).select('-password');
 };
 
-export const deleteUser = async (id) => {
-  const query = getQuery(id);
-  return await User.findOneAndDelete(query);
-};
-
 export const findPendingApprovals = async () => {
-  return await User.find({ status: 'pending' }).select('-password');
+  // Sellers who submitted their application, oldest first. One still
+  // filling it in is not waiting on anybody yet.
+  return await User.find({ role: 'seller', status: 'pending', 'application.submittedAt': { $ne: null } })
+    .select('-password')
+    .sort({ 'application.submittedAt': 1 });
 };
 
 export const updateApproval = async (id, data) => {

@@ -17,7 +17,7 @@ import AdminAuditLog from '../models/AdminAuditLog.js';
  */
 
 const ORDER_FIELDS = 'sellerId groupId orderNumber productId productName unitPrice quantity weightKg subtotal deliveryFee total '
-  + 'status orderDate buyerUserId customerName statusHistory paymentStatus paymentMethod source';
+  + 'status orderDate buyerUserId customerName statusHistory paymentStatus paymentMethod source amountPaid refund';
 
 const sellerMatch = (scope) => (scope.sellerId != null ? { sellerId: scope.sellerId } : {});
 

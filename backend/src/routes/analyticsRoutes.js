@@ -1,5 +1,5 @@
 import express from 'express';
-import { protect, authorizeRoles } from '../middleware/authMiddleware.js';
+import { protect, authorizeRoles, requireActiveSeller } from '../middleware/authMiddleware.js';
 import {
   scopeFor, sellerSection, platformSection, buyerProfile, filterOptions,
 } from '../analytics/service.js';
@@ -54,7 +54,7 @@ const exportRoute = (build) => async (req, res, next) => {
 };
 
 // ---- Seller: their own records only ----
-const seller = authorizeRoles('seller');
+const seller = [authorizeRoles('seller'), requireActiveSeller];
 router.get('/seller/options', seller, run((req) => filterOptions(scopeFor(req.user))));
 router.get('/seller/export/:report', seller, exportRoute((req) => sellerReport(scopeFor(req.user), req.params.report, req.query)));
 router.get('/seller/:section', seller, run((req) => sellerSection(scopeFor(req.user), req.params.section, req.query)));

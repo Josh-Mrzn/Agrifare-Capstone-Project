@@ -2,7 +2,7 @@
 import { productRepository } from '../repositories/productRepository.js';
 import { getRatingMapForProducts } from '../repositories/reviewRepository.js';
 import { sellerService } from './sellerService.js';
-import { isSellerSuspended } from './sellerAvailability.js';
+import { isSellerClosed } from './sellerAvailability.js';
 import { AppError } from '../errors/appError.js';
 
 const NO_RATING = { averageRating: 0, reviewCount: 0 };
@@ -39,9 +39,9 @@ export const productService = {
   // Get product by ID
   async getProductById(id) {
     const product = await productRepository.getProductById(id);
-    // A suspended seller's listing answers exactly like a missing one, so an
+    // A closed seller's listing answers exactly like a missing one, so an
     // old link or a saved screen cannot open a product nobody may buy.
-    if (!product || await isSellerSuspended(product.createdBy)) {
+    if (!product || await isSellerClosed(product.createdBy)) {
       throw new AppError('Product not found', 404);
     }
 

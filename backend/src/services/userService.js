@@ -7,7 +7,8 @@ import {
 } from '../repositories/userRepository.js';
 import LoginSession from '../models/LoginSession.js';
 import { authRepository } from '../repositories/authRepository.js';
-import { toNameKey } from '../models/User.js';
+import User, { toNameKey } from '../models/User.js';
+import { notify, links } from './notify.js';
 
 // ====================== GET CURRENT USER ======================
 export const getMeService = async (userId) => {
@@ -22,7 +23,18 @@ const FLAT_FIELDS = ['name', 'contact', 'bio', 'pickupAddress', 'deliveryOrigin'
 // coordinate.
 const COORDINATE_FIELDS = { pickupLat: 90, pickupLng: 180 };
 
-export const updateProfileService = async (userId, updateData, uploadedFiles = {}) => {
+/** What only a seller's account carries: shop, pickup, payout, permits. */
+const SELLER_ONLY = ['pickupAddress', 'deliveryOrigin', 'sellerType', 'pickupLat', 'pickupLng', 'deliveryFee', 'sellerProfile', 'payout'];
+const SELLER_FILES = ['paymentQr', 'document', 'farmPhotos'];
+
+export const updateProfileService = async (userId, updateData, uploadedFiles = {}, role = 'seller') => {
+  // A buyer, rider or Super Admin has a name, a number and a picture; the
+  // shop fields are refused rather than quietly stored on the wrong account.
+  if (role !== 'seller') {
+    updateData = { ...updateData };
+    for (const key of SELLER_ONLY) delete updateData[key];
+    uploadedFiles = Object.fromEntries(Object.entries(uploadedFiles).filter(([k]) => !SELLER_FILES.includes(k)));
+  }
   const filteredData = {};
   for (const key of FLAT_FIELDS) {
     if (updateData[key] !== undefined) {
@@ -219,4 +231,48 @@ export const getLoginHistoryService = async (userId) => {
   if (!user) throw new Error('User not found');
 
   return await LoginSession.find({ userId: user._id }).sort({ loggedInAt: -1 }).limit(20);
+};
+// ====================== SELLER APPLICATION ======================
+/**
+ * Sends a seller's application to the Super Admins. Needs the basics a
+ * reviewer checks: what kind of seller they are, a business name, and at
+ * least one permit uploaded. A rejected application comes back here after
+ * the seller fixed it.
+ */
+export const submitSellerApplicationService = async (userId) => {
+  const user = await findUserByUserId(userId);
+  if (!user || user.role !== 'seller') throw new Error('Only a seller account has an application.');
+  if (!['pending', 'rejected'].includes(user.status)) {
+    throw new Error('Your shop is already approved.');
+  }
+  if (user.status === 'pending' && user.application?.submittedAt) {
+    throw new Error('Your application is already with the reviewers.');
+  }
+  if (!user.sellerType) throw new Error('Choose what kind of seller you are.');
+  if (!String(user.sellerProfile?.businessName || '').trim()) {
+    throw new Error('Add your business name.');
+  }
+  if (!(user.documents || []).some((d) => d.status !== 'rejected')) {
+    throw new Error('Upload at least one business permit (DTI, BIR, Mayor\'s permit or similar).');
+  }
+
+  const updated = await updateUserByUserId(userId, {
+    status: 'pending',
+    statusReason: '',
+    'application.submittedAt': new Date(),
+    'application.decidedAt': null,
+    'application.decidedBy': null,
+  });
+
+  const admins = await User.find({ role: 'superadmin', status: 'active' }).select('userId');
+  for (const admin of admins) {
+    await notify({
+      userId: admin.userId,
+      type: 'SYSTEM',
+      title: `Seller application: ${user.sellerProfile?.businessName || user.name}`,
+      body: 'Review their permit and approve or reject the application.',
+      link: links.approvals(),
+    });
+  }
+  return updated;
 };

@@ -1,3 +1,4 @@
+import { CLIENTS_FOR_ROLE } from '../services/authService.js';
 import jwt from 'jsonwebtoken';
 import User from '../models/User.js';
 
@@ -65,6 +66,14 @@ export const protect = async (req, res, next) => {
   if (account.status === 'suspended') {
     return refuseSuspended(res);
   }
+  if (account.status === 'deactivated') {
+    return res.status(401).json({ success: false, code: 'ACCOUNT_DEACTIVATED', message: 'This account has been closed.' });
+  }
+  // A token issued to one app, used by a role that does not belong there.
+  // Tokens from before this rule carry no app and are let through.
+  if (decoded.cl && !(CLIENTS_FOR_ROLE[account.role] || []).includes(decoded.cl)) {
+    return res.status(403).json({ code: 'WRONG_APP', message: 'This account cannot use this app.' });
+  }
   // A token from before a password reset belongs to the old password.
   if (account.passwordChangedAt
     && decoded.iat < Math.floor(new Date(account.passwordChangedAt).getTime() / 1000)) {
@@ -72,6 +81,22 @@ export const protect = async (req, res, next) => {
   }
 
   attachUser(req, decoded, account.role);
+  req.user.status = account.status;
+  return next();
+};
+
+/**
+ * The seller's working tools: products, orders, riders, analytics. A seller
+ * whose application is still pending or was rejected has an account but no
+ * shop yet, so these stay closed to them.
+ */
+export const requireActiveSeller = (req, res, next) => {
+  if (req.user?.role === 'seller' && req.user.status !== 'active') {
+    return res.status(403).json({
+      code: 'SELLER_NOT_APPROVED',
+      message: 'Your shop opens once a Super Admin approves your application.',
+    });
+  }
   return next();
 };
 

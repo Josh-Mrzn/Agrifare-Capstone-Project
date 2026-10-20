@@ -17,8 +17,8 @@ import {
   deleteUserAccount,
   createUserAccount,
   updateUserAccount,
-  fetchPlatformRevenue,
 } from '../../services/superAdminApi';
+import { fetchSection } from '../../services/analyticsApi';
 import { getErrorMessage } from '../../services/authApi';
 import AuditLogPanel from './AuditLogPanel';
 import CredentialsPanel from './CredentialsPanel';
@@ -94,8 +94,10 @@ export default function SuperAdminPage() {
     // loadAccounts() sets state only after its await, which this rule cannot see.
     // eslint-disable-next-line react-hooks/set-state-in-effect
     loadAccounts();
-    fetchPlatformRevenue()
-      .then((res) => setRevenue(res.data?.total || 0))
+    // The same figure as Analytics shows for the last 12 months, from the
+    // same module, so the two pages cannot disagree.
+    fetchSection('/analytics/platform', 'overview', { preset: '12m', compare: 'none' })
+      .then((res) => setRevenue(res.data?.kpis?.find((k) => k.id === 'sales')?.value || 0))
       .catch(() => setRevenue(0));
   }, [loadAccounts]);
 
@@ -166,12 +168,12 @@ function Overview({ accounts, pending, revenue, run, go }) {
       <section className="sa-hero">
         <div className="sa-hero-top">
           <span className="eyebrow">Sales on AgriFair</span>
-          <span className="sa-hero-period">All time</span>
+          <span className="sa-hero-period">Last 12 months</span>
         </div>
         <p className="sa-hero-value num">
           <span>₱</span>{revenue == null ? '…' : number(Math.round(revenue))}
         </p>
-        <p className="sa-hero-note">Money that changed hands through AgriFair, from orders sellers completed.</p>
+        <p className="sa-hero-note">Completed orders placed in the last 12 months, including delivery fees.</p>
         <div className="sa-hero-chips">
           <span><small>Accounts</small>{number(accounts.length)}</span>
           <span><small>Sellers active</small>{count('seller') ? Math.round((count('seller', 'active') / count('seller')) * 100) : 0}%</span>

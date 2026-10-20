@@ -1,7 +1,8 @@
 import mongoose from 'mongoose';
 import Order from '../models/Order.js';
 import { findUserByUserId } from '../repositories/userRepository.js';
-import { postOrderSystemMessage } from './chatService.js';
+import * as workflow from './orderWorkflow.js';
+import { isGcash } from './orderRules.js';
 
 /** Buyer-facing stages, collapsing the seller's finer statuses. */
 export const STAGES = ['pending', 'confirmed', 'preparing', 'delivery', 'delivered'];
@@ -63,6 +64,11 @@ function groupOrders(rows) {
         customerContact: row.customerContact,
         notes: row.notes,
         items: [],
+        paymentStatuses: [],
+        paymentNote: '',
+        cancellationNote: '',
+        complaintNote: '',
+        refund: null,
         subtotal: 0,
         deliveryFee: 0,
         total: 0,
@@ -80,7 +86,28 @@ function groupOrders(rows) {
       unitPrice: row.unitPrice,
       lineTotal: row.subtotal,
       status: row.status,
+      paymentStatus: row.paymentStatus,
+      cancellation: row.cancellation?.status || 'none',
+      complaint: row.complaint?.status || 'none',
+      riderUserId: row.delivery?.riderUserId ?? null,
+      courierName: row.delivery?.courierName || '',
     });
+    // The most recent words from the seller about the payment or a request,
+    // so the buyer is not left guessing why something was refused.
+    if (row.paymentNote) g.paymentNote = row.paymentNote;
+    if (row.cancellation?.decisionNote) g.cancellationNote = row.cancellation.decisionNote;
+    if (row.complaint?.resolutionNote) g.complaintNote = row.complaint.resolutionNote;
+    if (row.refund?.recordedAt) {
+      g.refund = {
+        amount: Number(g.refund?.amount || 0) + Number(row.refund.amount || 0),
+        reference: row.refund.reference || '',
+        recordedAt: row.refund.recordedAt,
+      };
+    }
+    // The payment is only as settled as its least settled live line.
+    if (row.status !== 'cancelled' || ['refund_due', 'refunded'].includes(row.paymentStatus)) {
+      g.paymentStatuses.push(row.paymentStatus);
+    }
     g.subtotal += Number(row.subtotal || 0);
     g.deliveryFee += Number(row.deliveryFee || 0);
     g.total += Number(row.total || 0);
@@ -99,9 +126,21 @@ function groupOrders(rows) {
 
     const stage = cancelled ? 'cancelled' : STAGES[stageIndex] ?? 'pending';
 
+    const PAY_ORDER = ['rejected', 'refund_due', 'proof_sent', 'unpaid', 'paid', 'refunded'];
+    const paymentStatus = PAY_ORDER.find((p) => g.paymentStatuses.includes(p)) || g.paymentStatus;
+    const live = g.items.filter((i) => i.status !== 'cancelled');
+
     return {
       ...g,
       statuses: undefined,
+      paymentStatuses: undefined,
+      paymentStatus,
+      cancellationRequested: live.some((i) => i.cancellation === 'requested'),
+      problemOpen: live.some((i) => i.complaint === 'open'),
+      // A GCash receipt the seller could not match: the buyer sends a new one.
+      canResubmitPayment: isGcash(g.paymentMethod) && live.length > 0 && live.every((i) => i.paymentStatus === 'rejected'),
+      // Something wrong with what arrived, before the order closes.
+      canReportProblem: live.some((i) => i.status === 'delivered') && !live.some((i) => i.complaint === 'open'),
       stage,
       stageIndex: cancelled ? -1 : stageIndex,
       message: MESSAGE[stage],
@@ -118,10 +157,7 @@ export const getMyOrders = async (buyerUserId, { ongoing } = {}) => {
   const rows = await Order.find({ buyerUserId }).sort({ orderDate: -1 }).lean();
   const groups = groupOrders(rows);
 
-  // Cancelling is only offered while nothing has been committed yet.
-  for (const g of groups) {
-    g.canCancel = g.items.every((i) => i.status === 'pending');
-  }
+  for (const g of groups) setCancelFlags(g);
 
   if (ongoing === true) return groups.filter((g) => g.isOngoing);
   if (ongoing === false) return groups.filter((g) => !g.isOngoing);
@@ -134,83 +170,49 @@ export const getMyOrder = async (buyerUserId, groupId) => {
   if (!rows.length) throw new Error('Order not found');
 
   const [group] = groupOrders(rows);
-  group.canCancel = group.items.every((i) => i.status === 'pending');
+  setCancelFlags(group);
   return group;
 };
 
 /**
- * A buyer may call off an order only while every line is still pending — once a
- * seller confirms, stock is committed and it becomes their decision.
+ * Whether the buyer can cancel, and whether doing so cancels on the spot or
+ * asks the seller. Nothing committed and nothing paid cancels at once; after
+ * that the seller decides, because stock or money has moved.
  */
+function setCancelFlags(g) {
+  const live = g.items.filter((i) => i.status !== 'cancelled');
+  const beforeShipping = live.length > 0 && live.every((i) => ['pending', 'confirmed', 'processing'].includes(i.status));
+  g.canCancel = beforeShipping && !g.cancellationRequested;
+  g.cancelNeedsApproval = g.canCancel
+    && !live.every((i) => i.status === 'pending' && i.paymentStatus === 'unpaid');
+}
+
+/** Cancels at once, or asks the seller (see setCancelFlags). */
 export const cancelMyOrder = async (buyerUserId, groupId, reason) => {
-  if (!reason?.trim()) throw new Error('Tell the seller why you are cancelling.');
-
-  const rows = await Order.find(matchGroup(buyerUserId, groupId));
-  if (!rows.length) throw new Error('Order not found');
-
-  const blocked = rows.filter((r) => r.status !== 'pending');
-  if (blocked.length) {
-    throw new Error('The seller already started on this order. Message them to cancel.');
-  }
-
-  // Conditional on each line still being pending, in the database rather
-  // than in memory: the seller may be confirming at this same moment, and a
-  // plain save would overwrite their "confirmed" after stock was taken out.
-  const result = await Order.updateMany(
-    { _id: { $in: rows.map((r) => r._id) }, status: 'pending' },
-    {
-      $set: { status: 'cancelled', statusReason: reason.trim() },
-      $push: { statusHistory: { status: 'cancelled', changedAt: new Date(), reason: reason.trim() } },
-    },
-  );
-  if (result.modifiedCount === 0) {
-    throw new Error('The seller already started on this order. Message them to cancel.');
-  }
-
-  // One message per seller, not per row: a basket cancelled across three of
-  // their listings is one piece of news to each seller, not three.
-  for (const sellerUserId of new Set(rows.map((r) => r.sellerId))) {
-    await postOrderSystemMessage({
-      sellerUserId,
-      buyerUserId,
-      text: `The buyer cancelled order ${rows[0].orderNumber} - ${reason.trim()}.`,
-    });
-  }
-
-  return getMyOrder(buyerUserId, groupId);
+  const outcome = await workflow.buyerCancel(buyerUserId, groupId, reason);
+  const order = await getMyOrder(buyerUserId, groupId);
+  return { ...order, cancellationOutcome: outcome };
 };
 
 /**
- * The buyer's "I got it". Closes every delivered line of the order, and is
- * the record that the rice arrived - said by the person who received it, not
- * by the seller who would be paid for it.
+ * The buyer's "I got it". Closes every delivered line of the order that is
+ * settled, and is the record that the rice arrived - said by the person who
+ * received it, not by the seller who would be paid for it.
  */
 export const confirmReceived = async (buyerUserId, groupId) => {
-  const rows = await Order.find(matchGroup(buyerUserId, groupId));
-  if (!rows.length) throw new Error('Order not found');
+  await workflow.buyerConfirmReceived(buyerUserId, groupId);
+  return getMyOrder(buyerUserId, groupId);
+};
 
-  const delivered = rows.filter((r) => r.status === 'delivered');
-  if (!delivered.length) {
-    throw new Error('Nothing on this order has been delivered yet.');
-  }
+/** A new GCash receipt after the seller could not find the first payment. */
+export const resubmitPayment = async (buyerUserId, groupId, body) => {
+  await workflow.resubmitGcash(buyerUserId, groupId, body);
+  return getMyOrder(buyerUserId, groupId);
+};
 
-  const now = new Date();
-  await Order.updateMany(
-    { _id: { $in: delivered.map((r) => r._id) }, status: 'delivered' },
-    {
-      $set: { status: 'completed' },
-      $push: { statusHistory: { status: 'completed', changedAt: now, reason: 'Buyer confirmed receipt' } },
-    },
-  );
-
-  for (const sellerUserId of new Set(delivered.map((r) => r.sellerId))) {
-    await postOrderSystemMessage({
-      sellerUserId,
-      buyerUserId,
-      text: `The buyer confirmed they received order ${rows[0].orderNumber}.`,
-    });
-  }
-
+/** Something wrong with what arrived; pauses automatic completion. */
+export const reportProblem = async (buyerUserId, groupId, body) => {
+  await workflow.reportProblem(buyerUserId, groupId, body || {});
   return getMyOrder(buyerUserId, groupId);
 };
 

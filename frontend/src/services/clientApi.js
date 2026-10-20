@@ -20,8 +20,6 @@ export const removeProduct = (id) => API.delete(`/admin/products/${id}`);
 export const duplicateProduct = (id) => API.post(`/admin/products/${id}/duplicate`);
 export const fetchMyOrders = () => API.get('/admin/orders');
 export const recordSale = (data) => API.post('/admin/orders', data);
-export const fetchMyOrderAnalytics = () => API.get('/admin/orders/analytics');
-export const fetchMyOrderBreakdown = () => API.get('/admin/orders/breakdown');
 export const updateOrderStatus = (id, status, reason) => API.put(`/admin/orders/${id}/status`, { status, reason });
 
 export const fetchInventorySummary = () => API.get('/admin/inventory');

@@ -11,9 +11,6 @@ export const rejectSeller = (id, reason) => API.put(`/superadmin/approvals/${id}
 export const createUserAccount = (data) => API.post('/superadmin/users', data);
 export const updateUserAccount = (id, data) => API.put(`/superadmin/users/${id}`, data);
 export const fetchAuditLogs = (params) => API.get('/superadmin/audit-logs', { params });
-export const fetchUserAnalytics = (id) => API.get(`/superadmin/users/${id}/analytics`);
-export const fetchPlatformRevenue = () => API.get('/superadmin/analytics/revenue');
-export const fetchBusinessAnalytics = () => API.get('/superadmin/analytics/businesses');
 
 // --- Seller credential review ---
 // Every seller who has submitted a payout account or a document, decided or

@@ -5,7 +5,9 @@ import Order from '../models/Order.js';
 import { findUserByUserId } from '../repositories/userRepository.js';
 import { postOrderSystemMessage } from './chatService.js';
 import * as paymongo from './paymongoService.js';
-import { isSellerSuspended, suspendedSellerIds } from './sellerAvailability.js';
+import { isSellerClosed, sellingSellerIds } from './sellerAvailability.js';
+import CheckoutKey from '../models/CheckoutKey.js';
+import { notify, links } from './notify.js';
 import User from '../models/User.js';
 import {
   PAYMENT_METHODS,
@@ -13,7 +15,16 @@ import {
   normalizePhMobile,
   normalizeGcashReference,
   deliveryFeesBySeller,
+  sellableWeights,
 } from './orderRules.js';
+
+/** Refuses a sack size the seller does not sell. */
+function assertSellableWeight(product, weightKg) {
+  const sizes = sellableWeights(product);
+  if (!sizes.includes(Number(weightKg))) {
+    throw new Error(`${product.name} comes in ${sizes.map((kg) => `${kg} kg`).join(', ')} only.`);
+  }
+}
 
 /** Two lines are the same line only if the rice and the sack size both match. */
 const sameLine = (item, productId, weightKg) =>
@@ -35,13 +46,13 @@ function priceForWeight(product, weightKg) {
 async function decorate(cart) {
   const ids = cart.items.map((i) => i.productId);
   const sellerIds = [...new Set(cart.items.map((i) => i.sellerId))];
-  const [products, suspended, sellers] = await Promise.all([
+  const [products, selling, sellers] = await Promise.all([
     Product.find({ _id: { $in: ids } }).lean(),
-    suspendedSellerIds(),
+    sellingSellerIds(),
     User.find({ userId: { $in: sellerIds } }).select('userId deliveryFee').lean(),
   ]);
   const byId = new Map(products.map((p) => [String(p._id), p]));
-  const closed = new Set(suspended);
+  const open = new Set(selling);
 
   const items = [];
   let subtotal = 0;
@@ -60,10 +71,12 @@ async function decorate(cart) {
     const lineTotal = Math.round(perSack * sacks * 100) / 100;
 
     const needed = weightKg * sacks;
-    // A suspended seller's sack stays in the cart, so the buyer sees why it
-    // cannot be bought, but it counts as having nothing left to sell.
-    const sellerSuspended = closed.has(product.createdBy);
-    const available = sellerSuspended ? 0 : Number(product.stock || 0);
+    // A closed seller's sack stays in the cart, so the buyer sees why it
+    // cannot be bought, but it counts as having nothing left to sell. So does
+    // a listing the seller took down, and a size they no longer sell.
+    const sellerSuspended = !open.has(product.createdBy);
+    const sizeGone = !sellableWeights(product).includes(weightKg);
+    const available = sellerSuspended || product.status === 'inactive' || sizeGone ? 0 : Number(product.stock || 0);
 
     items.push({
       productId: String(product._id),
@@ -83,6 +96,7 @@ async function decorate(cart) {
       inStock: available >= needed,
       availableStock: available,
       sellerSuspended,
+      sizeUnavailable: sizeGone,
     });
 
     if (available >= needed) subtotal += lineTotal;
@@ -123,9 +137,10 @@ export const addItem = async (buyerUserId, { productId, weightKg, quantity }) =>
 
   const product = await Product.findById(productId);
   if (!product) throw new Error('Product not found');
-  if (product.status === 'inactive' || await isSellerSuspended(product.createdBy)) {
+  if (product.status === 'inactive' || await isSellerClosed(product.createdBy)) {
     throw new Error('That product is not for sale right now.');
   }
+  assertSellableWeight(product, weight);
 
   const cart = await cartRepo.getOrCreate(buyerUserId);
   const existing = cart.items.find((i) => sameLine(i, productId, weight));
@@ -167,6 +182,7 @@ export const setQuantity = async (buyerUserId, productId, quantity, weightKg = 1
     cart.items = cart.items.filter((i) => !sameLine(i, productId, weight));
   } else {
     const product = await Product.findById(productId);
+    if (product) assertSellableWeight(product, weight);
     if (product && Number(product.stock) < weight * sacks) {
       throw new Error(`Only ${product.stock} kg left.`);
     }
@@ -187,7 +203,33 @@ export const clearCart = async (buyerUserId) => decorate(await cartRepo.clear(bu
  * get paid separately — but all rows share a groupId and order number so the
  * buyer sees one receipt.
  */
-export const checkout = async (buyerUserId, {
+export const checkout = async (buyerUserId, body = {}) => {
+  const key = String(body.checkoutKey || '').trim().slice(0, 100);
+  if (!key) return placeOrder(buyerUserId, body);
+
+  // Claim the key before anything is written. A second request with the same
+  // key either gets the first one's result or is told it is still going.
+  try {
+    await CheckoutKey.create({ buyerUserId, key });
+  } catch (err) {
+    if (err?.code !== 11000) throw err;
+    const previous = await CheckoutKey.findOne({ buyerUserId, key }).lean();
+    if (previous?.status === 'done') return { ...previous.result, duplicate: true };
+    throw new Error('This order is already being placed. Check your orders in a moment.');
+  }
+
+  try {
+    const result = await placeOrder(buyerUserId, body);
+    await CheckoutKey.updateOne({ buyerUserId, key }, { $set: { status: 'done', result } });
+    return result;
+  } catch (err) {
+    // Nothing was placed, so the same key may try again.
+    await CheckoutKey.deleteOne({ buyerUserId, key, status: 'processing' });
+    throw err;
+  }
+};
+
+async function placeOrder(buyerUserId, {
   customerName,
   customerContact,
   deliveryAddress,
@@ -196,7 +238,7 @@ export const checkout = async (buyerUserId, {
   paymentProof = '',
   paymentReference = '',
   addressId = '',
-}) => {
+}) {
   const method = paymentMethod || 'Cash/COD';
   if (!PAYMENT_METHODS.includes(method)) {
     throw new Error(`Choose a payment method: ${PAYMENT_METHODS.join(', ')}.`);
@@ -212,10 +254,12 @@ export const checkout = async (buyerUserId, {
   if (view.hasUnavailable) {
     const blocked = view.items.filter((i) => !i.inStock);
     const closedShop = blocked.filter((i) => i.sellerSuspended).map((i) => i.name);
-    const soldOut = blocked.filter((i) => !i.sellerSuspended).map((i) => i.name);
+    const wrongSize = blocked.filter((i) => !i.sellerSuspended && i.sizeUnavailable).map((i) => `${i.name} (${i.weightKg} kg)`);
+    const soldOut = blocked.filter((i) => !i.sellerSuspended && !i.sizeUnavailable).map((i) => i.name);
 
     throw new Error([
       closedShop.length && `No longer sold: ${closedShop.join(', ')}.`,
+      wrongSize.length && `No longer sold in that size: ${wrongSize.join(', ')}.`,
       soldOut.length && `Out of stock: ${soldOut.join(', ')}.`,
       'Remove them to continue.',
     ].filter(Boolean).join(' '));
@@ -256,6 +300,13 @@ export const checkout = async (buyerUserId, {
     // single receipt cannot cover a basket from two of them.
     if (new Set(view.items.map((line) => line.sellerId)).size > 1) {
       throw new Error('GCash pays one shop at a time. Check out each shop separately, or use cash on delivery.');
+    }
+
+    // Only to a GCash account a Super Admin has checked. Money sent to an
+    // unverified number cannot be traced back to the shop it was meant for.
+    const seller = await findUserByUserId(view.items[0].sellerId);
+    if (seller?.payout?.status !== 'verified' || seller?.payout?.method !== 'gcash') {
+      throw new Error('This shop does not accept GCash yet. Use cash on delivery or online payment.');
     }
   }
 
@@ -351,6 +402,12 @@ export const checkout = async (buyerUserId, {
         `Order ${orderNumber} placed - ${items}. Total P${total.toFixed(2)}, ` +
         `paid by ${method}. Waiting for the seller to confirm.`,
     });
+    await notify({
+      userId: sellerUserId,
+      title: `New order ${orderNumber}`,
+      body: `${items} - ₱${total.toFixed(2)} by ${method}.${isGcash(method) ? ' Check the GCash receipt.' : ''}`,
+      link: links.sellerOrder(lines[0]._id),
+    });
   }
 
   // The orders exist either way. If PayMongo is down, the buyer can open the
@@ -373,4 +430,4 @@ export const checkout = async (buyerUserId, {
     paymentMethod: method,
     deliveryAddress: deliveryAddress.trim(),
   };
-};
+}

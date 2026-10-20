@@ -104,24 +104,6 @@ export const recordSale = async (req, res) => {
   }
 };
 
-export const getMyOrderAnalytics = async (req, res) => {
-  try {
-    const analytics = await adminService.getMyOrderAnalytics(req.user.userId);
-    res.status(200).json(analytics);
-  } catch (error) {
-    res.status(500).json({ message: error.message });
-  }
-};
-
-export const getMyOrderBreakdown = async (req, res) => {
-  try {
-    const breakdown = await adminService.getMyOrderBreakdown(req.user.userId);
-    res.status(200).json(breakdown);
-  } catch (error) {
-    res.status(500).json({ message: error.message });
-  }
-};
-
 export const getMyCustomers = async (req, res) => {
   try {
     const customers = await adminService.getMyCustomers(req.user.userId);
@@ -158,6 +140,7 @@ export const recordDeliveryHandler = async (req, res) => {
     res.json(await adminService.recordSellerDelivery(req.params.id, req.user.userId, {
       proofPath: req.file ? `/api/files/${req.file.filename}` : '',
       note: req.body?.note,
+      cashCollected: req.body?.cashCollected,
     }));
   } catch (error) {
     res.status(error.statusCode || 400).json({ message: error.message });
@@ -234,3 +217,17 @@ export const emailReportHandler = async (req, res) => {
 export const mailStatusHandler = (req, res) => {
   res.json(reportService.mailStatus());
 };
+
+/** The order actions that all take (orderId, sellerId, body) and return the order. */
+const orderAction = (fn) => async (req, res) => {
+  try {
+    res.json(await fn(req.params.id, req.user.userId, req.body || {}));
+  } catch (error) {
+    res.status(error.statusCode || 400).json({ message: error.message });
+  }
+};
+
+export const correctCodHandler = orderAction(adminService.correctCodPayment);
+export const recordRefundHandler = orderAction(adminService.recordRefund);
+export const decideCancellationHandler = orderAction(adminService.decideCancellation);
+export const resolveProblemHandler = orderAction(adminService.resolveProblem);

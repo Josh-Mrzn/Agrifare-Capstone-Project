@@ -2,7 +2,15 @@ import mongoose from 'mongoose';
 
 const conversationSchema = new mongoose.Schema({
   participants: [{ type: mongoose.Schema.Types.ObjectId, ref: 'User' }],
-  lastMessage: { type: mongoose.Schema.Types.ObjectId, ref: 'Message' }
+  lastMessage: { type: mongoose.Schema.Types.ObjectId, ref: 'Message' },
+  /**
+   * The order a thread is about, when it is about one. A rider and a buyer
+   * only ever talk about a delivery, so their thread is tied to it (the
+   * order's groupId) and closes to new messages once that delivery is done.
+   * Empty for the ordinary buyer-seller thread.
+   */
+  orderRef: { type: String, default: '' },
+  orderNumber: { type: String, default: '' },
 }, { timestamps: true });
 
 // Ensure a conversation is unique between two users

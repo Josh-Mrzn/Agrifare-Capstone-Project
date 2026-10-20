@@ -1,14 +1,16 @@
 import { Conversation } from '../models/Chat.js';
 
-const findConversation = async (participantIds) => {
-  // Use $all to ensure both specific MongoDB _ids are present
+const findConversation = async (participantIds, orderRef = '') => {
+  // Use $all to ensure both specific MongoDB _ids are present. Threads from
+  // before orderRef existed have no such field and count as general ones.
   return await Conversation.findOne({
-    participants: { $all: participantIds, $size: participantIds.length }
+    participants: { $all: participantIds, $size: participantIds.length },
+    orderRef: orderRef ? orderRef : { $in: ['', null] },
   }).populate('participants', 'name email role userId avatarUrl');
 };
 
-const createConversation = async (participantIds) => {
-  const newConversation = new Conversation({ participants: participantIds });
+const createConversation = async (participantIds, { orderRef = '', orderNumber = '' } = {}) => {
+  const newConversation = new Conversation({ participants: participantIds, orderRef, orderNumber });
   return await newConversation.save();
 };
 

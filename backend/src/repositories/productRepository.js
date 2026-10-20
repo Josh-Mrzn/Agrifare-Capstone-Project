@@ -1,6 +1,6 @@
 // src/repositories/productRepository.js
 import Product, { STOREFRONT_FILTER } from '../models/Product.js';
-import { excludeSuspendedSellers } from '../services/sellerAvailability.js';
+import { onlyOpenSellers } from '../services/sellerAvailability.js';
 import { escapeRegex } from '../utils/escapeRegex.js';
 
 export const productRepository = {
@@ -14,7 +14,7 @@ export const productRepository = {
     // has run out. A suspended seller's listings are hidden either way.
     const query = {
       ...(filters.includeSoldOut ? {} : STOREFRONT_FILTER),
-      ...(await excludeSuspendedSellers()),
+      ...(await onlyOpenSellers()),
     };
 
     // Apply filters
@@ -59,7 +59,7 @@ export const productRepository = {
     return await Product.find({
       variety,
       ...(includeSoldOut ? {} : STOREFRONT_FILTER),
-      ...(await excludeSuspendedSellers()),
+      ...(await onlyOpenSellers()),
     }).sort({ createdAt: -1 });
   },
 
@@ -68,7 +68,7 @@ export const productRepository = {
     const pattern = escapeRegex(searchTerm);
     return await Product.find({
       ...(includeSoldOut ? {} : STOREFRONT_FILTER),
-      ...(await excludeSuspendedSellers()),
+      ...(await onlyOpenSellers()),
       $or: [
         { name: { $regex: pattern, $options: 'i' } },
         { description: { $regex: pattern, $options: 'i' } }

@@ -8,8 +8,6 @@ import {
   viewOrders,
   getMyProducts,
   recordSale,
-  getMyOrderAnalytics,
-  getMyOrderBreakdown,
   getMyCustomers,
   updateOrderStatusHandler,
   reviewOrderPaymentHandler,
@@ -21,14 +19,18 @@ import {
   restockProduct,
   adjustStock,
   getStockMovements,
+  correctCodHandler,
+  recordRefundHandler,
+  decideCancellationHandler,
+  resolveProblemHandler,
 } from '../controllers/adminController.js';
-import { protect, authorizeRoles } from '../middleware/authMiddleware.js';
+import { protect, authorizeRoles, requireActiveSeller } from '../middleware/authMiddleware.js';
 import upload from '../middleware/multerMiddleware.js';
 
 const router = express.Router();
 
 
-router.use(protect, authorizeRoles('seller'));
+router.use(protect, authorizeRoles('seller'), requireActiveSeller);
 
 router.post('/products', upload.array('images', 5), addProduct);
 router.put('/products/:id', upload.array('images', 5), editProduct);
@@ -37,13 +39,15 @@ router.post('/products/:id/duplicate', duplicateProduct);
 router.get('/products', getMyProducts);
 
 router.post('/orders', recordSale);
-router.get('/orders/analytics', getMyOrderAnalytics);
-router.get('/orders/breakdown', getMyOrderBreakdown);
 router.get('/orders/customers', getMyCustomers);
 router.get('/orders', viewOrders);
 router.put('/orders/:id/status', updateOrderStatusHandler);
 router.put('/orders/:id/payment', reviewOrderPaymentHandler);
 router.put('/orders/:id/courier', setCourierHandler);
+router.put('/orders/:id/cod', correctCodHandler);
+router.put('/orders/:id/refund', recordRefundHandler);
+router.put('/orders/:id/cancellation', decideCancellationHandler);
+router.put('/orders/:id/problem', resolveProblemHandler);
 // The photo at the door, when the seller's courier delivered rather than one
 // of their riders. Private like the rider's proof.
 router.post('/orders/:id/delivered', upload.single('proof'), recordDeliveryHandler);

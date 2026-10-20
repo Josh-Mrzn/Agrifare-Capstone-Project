@@ -5,8 +5,9 @@ import { authRepository } from '../repositories/authRepository.js';
 import { findUserByUserId } from '../repositories/userRepository.js';
 import { activationService } from './activationService.js';
 import { toNameKey, EMAIL_PATTERN } from '../models/User.js';
-import * as notificationRepo from '../repositories/notificationRepository.js';
-import { updateOrderStatus } from './adminService.js';
+import * as workflow from './orderWorkflow.js';
+import { notify, links } from './notify.js';
+import { isCod } from './orderRules.js';
 
 /**
  * Delivery people, added by the seller they work for.
@@ -150,29 +151,38 @@ export const riderService = {
   },
 
   /**
-   * Puts a rider on one order line.
-   *
-   * Per line, because a basket split across two sellers is two journeys, and
-   * each seller assigns their own person to their own part of it.
+   * Puts a rider on a seller-order: every line this seller fulfils from one
+   * checkout, since they travel together. The rider has to accept before it
+   * can go out; until then it shows as waiting on them.
    */
   async assign(sellerUserId, orderId, riderUserId) {
-    const order = await Order.findById(orderId);
-    if (!order) throw new Error('Order not found.');
-    if (order.sellerId !== sellerUserId) throw new Error('Not your order.');
-    if (['delivered', 'completed', 'cancelled'].includes(order.status)) {
-      throw new Error('This order is already finished.');
+    const order = await workflow.sellersOrder(orderId, sellerUserId);
+    if (['shipped', 'delivered', 'completed', 'cancelled'].includes(order.status)) {
+      throw new Error('The delivery person can only be changed before the order goes out.');
     }
+    const rows = (await workflow.sellerOrderRows(order)).filter((r) => r.status !== 'cancelled');
+    const ids = rows.map((r) => r._id);
+    const previous = order.delivery?.riderUserId;
 
     if (riderUserId == null || riderUserId === '') {
-      order.delivery = {
-        ...(order.delivery?.toObject?.() || order.delivery || {}),
-        riderUserId: null,
-        assignedAt: null,
-        courierName: '',
-        courierContact: '',
-      };
-      await order.save();
-      return order.delivery;
+      await Order.updateMany({ _id: { $in: ids } }, {
+        $set: {
+          'delivery.riderUserId': null,
+          'delivery.assignmentStatus': '',
+          'delivery.assignedAt': null,
+          'delivery.courierName': '',
+          'delivery.courierContact': '',
+        },
+      });
+      if (previous != null) {
+        await notify({
+          userId: previous,
+          title: `Delivery ${order.orderNumber} unassigned`,
+          body: 'The seller took you off this delivery.',
+          link: links.riderDelivery(order._id),
+        });
+      }
+      return (await workflow.loadOrder(order._id)).delivery;
     }
 
     const rider = await User.findOne({
@@ -181,8 +191,8 @@ export const riderService = {
       employedBy: sellerUserId,
     });
     if (!rider) throw new Error('That is not one of your delivery people.');
-    if (rider.status === 'suspended') {
-      throw new Error('That delivery person is suspended.');
+    if (rider.status !== 'active') {
+      throw new Error('That delivery person is not active.');
     }
     // Nothing to carry until the seller has accepted it (and, for GCash,
     // checked the payment).
@@ -190,65 +200,275 @@ export const riderService = {
       throw new Error('Confirm the order before assigning a delivery person.');
     }
 
-    order.delivery = {
-      ...(order.delivery?.toObject?.() || order.delivery || {}),
-      riderUserId: rider.userId,
-      assignedAt: new Date(),
-      // Copied onto the order so the buyer sees a name without the app having
-      // to look up a stranger's account.
-      courierName: rider.name,
-      courierContact: rider.contact || '',
-    };
-    await order.save();
-
-    await notificationRepo.createNotification({
-      userId: rider.userId,
-      type: 'ORDER',
-      title: `You are delivering ${order.orderNumber}`,
-      body: `${order.productName} to ${order.deliveryAddress}`,
-      link: `/rider?order=${order._id}`,
+    await Order.updateMany({ _id: { $in: ids } }, {
+      $set: {
+        'delivery.riderUserId': rider.userId,
+        'delivery.assignmentStatus': 'assigned',
+        'delivery.assignedAt': new Date(),
+        'delivery.acceptedAt': null,
+        'delivery.declineReason': '',
+        // Copied onto the order so the buyer sees a name without the app
+        // having to look up a stranger's account.
+        'delivery.courierName': rider.name,
+        'delivery.courierContact': rider.contact || '',
+        'delivery.courierReference': '',
+      },
     });
 
-    return order.delivery;
+    if (previous != null && previous !== rider.userId) {
+      await notify({
+        userId: previous,
+        title: `Delivery ${order.orderNumber} reassigned`,
+        body: 'The seller gave this delivery to someone else.',
+        link: links.riderDelivery(order._id),
+      });
+    }
+    await notify({
+      userId: rider.userId,
+      title: `New delivery: ${order.orderNumber}`,
+      body: `To ${order.deliveryAddress}. Accept or decline it in the app.`,
+      link: links.riderDelivery(order._id),
+    });
+
+    return (await workflow.loadOrder(order._id)).delivery;
+  },
+
+  /** The order a rider is allowed to touch: one assigned to them. */
+  async assignedOrder(riderUserId, orderId) {
+    let order = null;
+    try {
+      order = await Order.findOne({ _id: orderId, 'delivery.riderUserId': riderUserId });
+    } catch {
+      order = null;
+    }
+    if (!order) throw new Error('That delivery is not assigned to you.');
+    return order;
+  },
+
+  /** Every line of the seller-order this rider carries, still live. */
+  async deliveryRows(order) {
+    return (await workflow.sellerOrderRows(order))
+      .filter((r) => r.status !== 'cancelled' && r.delivery?.riderUserId === order.delivery?.riderUserId);
+  },
+
+  async accept(riderUserId, orderId) {
+    const order = await this.assignedOrder(riderUserId, orderId);
+    if (order.status === 'cancelled') throw new Error('This order was cancelled.');
+    if (order.delivery?.assignmentStatus === 'accepted') return this.delivery(riderUserId, orderId);
+    if (order.delivery?.assignmentStatus !== 'assigned') {
+      throw new Error('This delivery is not waiting for your answer.');
+    }
+    const rows = await this.deliveryRows(order);
+    await Order.updateMany(
+      { _id: { $in: rows.map((r) => r._id) }, 'delivery.riderUserId': riderUserId, 'delivery.assignmentStatus': 'assigned' },
+      { $set: { 'delivery.assignmentStatus': 'accepted', 'delivery.acceptedAt': new Date() } },
+    );
+    const rider = await findUserByUserId(riderUserId);
+    await notify({
+      userId: order.sellerId,
+      title: `${rider?.name || 'Your delivery person'} accepted ${order.orderNumber}`,
+      body: 'You can send it out once it is packed.',
+      link: links.sellerOrder(order._id),
+    });
+    return this.delivery(riderUserId, orderId);
+  },
+
+  async decline(riderUserId, orderId, reason) {
+    const order = await this.assignedOrder(riderUserId, orderId);
+    const why = clean(reason);
+    if (!why) throw new Error('Tell the seller why you cannot take it.');
+    if (['shipped', 'delivered', 'completed'].includes(order.status)) {
+      throw new Error('This delivery is already under way. Message the seller instead.');
+    }
+    const rows = await this.deliveryRows(order);
+    const now = new Date();
+    await Order.updateMany(
+      { _id: { $in: rows.map((r) => r._id) }, 'delivery.riderUserId': riderUserId },
+      {
+        $set: {
+          'delivery.riderUserId': null,
+          'delivery.assignmentStatus': 'declined',
+          'delivery.declinedAt': now,
+          'delivery.declineReason': why,
+          'delivery.declinedBy': riderUserId,
+          'delivery.courierName': '',
+          'delivery.courierContact': '',
+        },
+      },
+    );
+    const rider = await findUserByUserId(riderUserId);
+    await notify({
+      userId: order.sellerId,
+      title: `${rider?.name || 'Your delivery person'} declined ${order.orderNumber}`,
+      body: `${why}. Assign someone else.`,
+      link: links.sellerOrder(order._id),
+    });
+    return { declined: true };
+  },
+
+  /** Picked up and on the road: the order goes out for delivery. */
+  async start(riderUserId, orderId) {
+    const order = await this.assignedOrder(riderUserId, orderId);
+    if (order.status === 'shipped') return this.delivery(riderUserId, orderId);
+    if (order.delivery?.assignmentStatus !== 'accepted') {
+      throw new Error('Accept the delivery first.');
+    }
+    if (order.status !== 'processing') {
+      throw new Error('The seller has not finished packing this order yet.');
+    }
+    await workflow.transition(order, 'shipped', { role: 'rider', userId: riderUserId });
+    return this.delivery(riderUserId, orderId);
   },
 
   /**
-   * The rider's own list: orders assigned to them and still on the road.
-   *
-   * Completed and cancelled ones drop off - a rider's screen should show the
-   * work in front of them, not a history they cannot act on.
+   * The photo taken at the door. Kept on the order straight away, so a
+   * dropped connection on "Mark as delivered" does not lose it; the status
+   * moves only when the rider marks it delivered.
    */
-  async myDeliveries(riderUserId) {
-    const orders = await Order.find({
-      'delivery.riderUserId': riderUserId,
-      status: { $in: ['confirmed', 'processing', 'shipped', 'delivered'] },
-    }).sort({ 'delivery.assignedAt': -1 });
+  async uploadProof(riderUserId, orderId, { proofPath, note }) {
+    const order = await this.assignedOrder(riderUserId, orderId);
+    if (!proofPath) throw new Error('Take a photo of the delivery first.');
+    if (order.status === 'cancelled') throw new Error('This order was cancelled.');
+    // Only from "out for delivery". Earlier would skip the seller's payment
+    // check and the stock deduction. An order already delivered may have its
+    // photo replaced.
+    if (!['shipped', 'delivered'].includes(order.status)) {
+      throw new Error('The seller has not sent this order out yet. Wait until it is marked out for delivery.');
+    }
+    const rows = await this.deliveryRows(order);
+    await Order.updateMany({ _id: { $in: rows.map((r) => r._id) } }, {
+      $set: {
+        'delivery.proofOfDelivery': proofPath,
+        'delivery.proofUploadedAt': new Date(),
+        ...(note !== undefined ? { 'delivery.deliveryNote': clean(note) } : {}),
+      },
+    });
+    return this.delivery(riderUserId, orderId);
+  },
 
-    const sellerIds = [...new Set(orders.map((o) => o.sellerId))];
+  /**
+   * "Mark as delivered". Safe to press again: a retry after the first one
+   * went through returns the delivered order rather than an error, so a
+   * rider on a weak signal can keep trying without making a mess.
+   */
+  async markDelivered(riderUserId, orderId, { cashCollected, note } = {}) {
+    const order = await this.assignedOrder(riderUserId, orderId);
+    if (['delivered', 'completed'].includes(order.status)) return this.delivery(riderUserId, orderId);
+    if (order.status === 'cancelled') throw new Error('This order was cancelled.');
+    if (order.status !== 'shipped') throw new Error('Start the delivery first.');
+    if (!order.delivery?.proofOfDelivery) throw new Error('Upload the photo of the delivery first.');
+
+    const rows = (await this.deliveryRows(order)).filter((r) => r.status === 'shipped');
+    if (isCod(order.paymentMethod)) {
+      if (cashCollected == null || cashCollected === '') {
+        throw new Error('Enter how much cash you collected.');
+      }
+      await workflow.recordCodCollection(rows, cashCollected, { by: riderUserId, note });
+    }
+
+    const now = new Date();
+    await Order.updateMany({ _id: { $in: rows.map((r) => r._id) } }, {
+      $set: {
+        'delivery.deliveredAt': now,
+        'delivery.deliveredBy': riderUserId,
+        // The journey is over; there is nothing left to broadcast.
+        'delivery.isLive': false,
+        'delivery.lat': null,
+        'delivery.lng': null,
+        ...(note !== undefined && clean(note) ? { 'delivery.deliveryNote': clean(note) } : {}),
+      },
+    });
+
+    try {
+      await workflow.transition(await Order.findById(order._id), 'delivered', { role: 'rider', userId: riderUserId });
+    } catch (err) {
+      // Someone else (a double tap) got there first.
+      const fresh = await Order.findById(order._id);
+      if (!['delivered', 'completed'].includes(fresh?.status)) throw err;
+    }
+    return this.delivery(riderUserId, orderId);
+  },
+
+  /**
+   * The rider's list. `active` is the work in front of them; `history` is
+   * what they have delivered, for their own record. One entry per
+   * seller-order, the way they carry it.
+   */
+  async myDeliveries(riderUserId, { scope = 'active' } = {}) {
+    const statuses = scope === 'history'
+      ? ['delivered', 'completed']
+      : ['confirmed', 'processing', 'shipped'];
+    const rows = await Order.find({
+      'delivery.riderUserId': riderUserId,
+      status: { $in: statuses },
+    }).sort({ 'delivery.assignedAt': -1 }).limit(scope === 'history' ? 100 : 500);
+    return this.describe(rows);
+  },
+
+  async delivery(riderUserId, orderId) {
+    const order = await this.assignedOrder(riderUserId, orderId);
+    const rows = await this.deliveryRows(order);
+    const [entry] = await this.describe(rows.length ? rows : [order]);
+    return entry;
+  },
+
+  async describe(rows) {
+    const sellerIds = [...new Set(rows.map((o) => o.sellerId))];
     const sellers = await User.find({ userId: { $in: sellerIds } })
-      .select('userId name pickupAddress pickupLat pickupLng');
+      .select('userId name contact pickupAddress pickupLat pickupLng');
     const bySeller = new Map(sellers.map((s) => [s.userId, s]));
 
-    return orders.map((order) => {
+    const groups = new Map();
+    for (const order of rows) {
+      const key = `${order.groupId || order._id}:${order.sellerId}`;
+      if (!groups.has(key)) groups.set(key, []);
+      groups.get(key).push(order);
+    }
+
+    return [...groups.values()].map((lines) => {
+      const order = lines[0];
       const seller = bySeller.get(order.sellerId);
       const route = order.route || {};
       const delivery = order.delivery || {};
+      const total = lines.reduce((sum, r) => sum + Number(r.total || 0), 0);
+      const cod = isCod(order.paymentMethod);
 
       return {
         orderId: String(order._id),
+        groupId: order.groupId || String(order._id),
         orderNumber: order.orderNumber,
         status: order.status,
-        productName: order.productName,
-        quantity: order.quantity,
+        assignmentStatus: delivery.assignmentStatus || 'accepted',
+        items: lines.map((r) => ({
+          orderId: String(r._id),
+          productName: r.productName,
+          quantity: r.quantity,
+          weightKg: r.weightKg || 1,
+        })),
+        // Kept for older app versions that read one line.
+        productName: lines.map((r) => `${r.quantity}x ${r.productName}`).join(', '),
+        quantity: lines.reduce((n, r) => n + Number(r.quantity || 0), 0),
         weightKg: order.weightKg || 1,
-        total: order.total,
+        total: Math.round(total * 100) / 100,
         paymentMethod: order.paymentMethod,
         paymentStatus: order.paymentStatus,
+        isCod: cod,
+        // What to collect at the door: the whole amount for cash on
+        // delivery, nothing for an order already paid.
+        amountToCollect: cod && order.paymentStatus === 'unpaid' && !order.codCollection?.collectedAt
+          ? Math.round(total * 100) / 100
+          : 0,
+        cashCollected: order.codCollection?.collectedAt
+          ? lines.reduce((sum, r) => sum + Number(r.codCollection?.amount || 0), 0)
+          : null,
         customerName: order.customerName,
         customerContact: order.customerContact,
+        buyerUserId: order.buyerUserId ?? null,
         deliveryAddress: order.deliveryAddress,
         notes: order.notes || '',
         shopName: seller?.name || '',
+        shopContact: seller?.contact || '',
+        sellerUserId: order.sellerId,
         pickup: {
           lat: route.pickupLat ?? seller?.pickupLat ?? null,
           lng: route.pickupLng ?? seller?.pickupLng ?? null,
@@ -260,74 +480,19 @@ export const riderService = {
           address: order.deliveryAddress || '',
           precision: route.dropoffPrecision || '',
         },
+        assignedAt: delivery.assignedAt || null,
+        acceptedAt: delivery.acceptedAt || null,
         proofOfDelivery: delivery.proofOfDelivery || '',
+        proofUploadedAt: delivery.proofUploadedAt || null,
         deliveredAt: delivery.deliveredAt || null,
         deliveryNote: delivery.deliveryNote || '',
         isLive: Boolean(delivery.isLive),
         lastPositionAt: delivery.updatedAt || null,
+        canAccept: delivery.assignmentStatus === 'assigned',
+        canStart: delivery.assignmentStatus !== 'assigned' && order.status === 'processing',
+        canUploadProof: ['shipped', 'delivered'].includes(order.status),
+        canMarkDelivered: order.status === 'shipped' && Boolean(delivery.proofOfDelivery),
       };
     });
-  },
-
-  /** The order a rider is allowed to touch: one assigned to them. */
-  async assignedOrder(riderUserId, orderId) {
-    const order = await Order.findOne({
-      _id: orderId,
-      'delivery.riderUserId': riderUserId,
-    });
-    if (!order) throw new Error('That delivery is not assigned to you.');
-    return order;
-  },
-
-  /**
-   * The photo taken at the door, and the moment it was taken.
-   *
-   * Marks the line delivered in the same call: the proof and the status are
-   * one event, and letting them drift apart is how an order ends up delivered
-   * with nothing to show for it.
-   */
-  async recordDelivery(riderUserId, orderId, { proofPath, note }) {
-    const order = await this.assignedOrder(riderUserId, orderId);
-
-    if (!proofPath) throw new Error('Take a photo of the delivery first.');
-    if (order.status === 'cancelled') {
-      throw new Error('This order was cancelled.');
-    }
-    // Delivered only from "out for delivery". Jumping here from pending or
-    // confirmed would skip the seller's payment check and the stock deduction.
-    // An order already delivered may have its photo replaced.
-    if (!['shipped', 'delivered'].includes(order.status)) {
-      throw new Error('The seller has not sent this order out yet. Wait until it is marked out for delivery.');
-    }
-
-    order.delivery = {
-      ...(order.delivery?.toObject?.() || order.delivery || {}),
-      proofOfDelivery: proofPath,
-      deliveredAt: new Date(),
-      deliveryNote: clean(note),
-      // The journey is over; there is nothing left to broadcast.
-      isLive: false,
-      lat: null,
-      lng: null,
-    };
-    await order.save();
-
-    if (order.status === 'shipped') {
-      // The same transition the seller's own "delivered" goes through, so the
-      // rules, the buyer's message and the notifications stay in one place.
-      await updateOrderStatus(order._id, order.sellerId, 'delivered');
-    }
-
-    const rider = await findUserByUserId(riderUserId);
-
-    await notificationRepo.createNotification({
-      userId: order.sellerId,
-      type: 'ORDER',
-      title: `${order.orderNumber} delivered`,
-      body: `${rider?.name || 'Your rider'} uploaded proof of delivery.`,
-      link: `/client?tab=Orders&order=${order._id}`,
-    });
-
-    return order.delivery;
   },
 };

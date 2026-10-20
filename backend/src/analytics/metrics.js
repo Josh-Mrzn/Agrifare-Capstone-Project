@@ -63,6 +63,9 @@ const countOrders = (rows, pred = () => true) => new Set(rows.filter(pred).map(o
  * aov              sales / completedOrders, null when there are none
  * completionRate   completed / (completed + cancelled) orders, null when neither
  * cancellationRate cancelled / all orders placed, null when none were placed
+ * refunded         money recorded as returned to buyers on orders placed in
+ *                  the period (cancelled after payment)
+ * refundDue        money received on cancelled orders and not yet returned
  */
 export function summarize(rows) {
   const sales = rows.filter(isSale);
@@ -96,6 +99,9 @@ export function summarize(rows) {
     buyers: new Set(sales.map(buyerKey)).size,
     completionRate: closed ? round((completedOrders / closed) * 100, 1) : null,
     cancellationRate: placedOrders ? round((cancelledOrders / placedOrders) * 100, 1) : null,
+    refunded: round(rows.filter((r) => r.paymentStatus === 'refunded').reduce((s, r) => s + num(r.refund?.amount), 0)),
+    refundDue: round(rows.filter((r) => r.paymentStatus === 'refund_due').reduce((s, r) => s + num(r.amountPaid), 0)),
+    refundOrders: countOrders(rows, (r) => ['refund_due', 'refunded'].includes(r.paymentStatus)),
   };
 }
 

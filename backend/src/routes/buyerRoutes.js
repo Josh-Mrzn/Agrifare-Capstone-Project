@@ -1,10 +1,12 @@
 import express from 'express';
-import { protect } from '../middleware/authMiddleware.js';
+import { protect, authorizeRoles } from '../middleware/authMiddleware.js';
+import upload from '../middleware/multerMiddleware.js';
 import * as buyerService from '../services/buyerService.js';
 import * as paymongo from '../services/paymongoService.js';
 
 const router = express.Router();
-router.use(protect);
+// Orders here are the signed-in buyer's own; other roles have their own pages.
+router.use(protect, authorizeRoles('buyer'));
 
 const handle = (fn) => async (req, res) => {
   try {
@@ -23,6 +25,16 @@ router.get('/orders', handle((req) => {
 
 router.get('/orders/:groupId', handle((req) => buyerService.getMyOrder(req.user.userId, req.params.groupId)));
 router.post('/orders/:groupId/cancel', handle((req) => buyerService.cancelMyOrder(req.user.userId, req.params.groupId, req.body?.reason)));
+// A new GCash receipt after the seller could not find the payment.
+router.post(
+  '/orders/:groupId/payment-proof',
+  upload.single('paymentProof'),
+  handle((req) => buyerService.resubmitPayment(req.user.userId, req.params.groupId, {
+    paymentProof: req.file ? `/api/files/${req.file.filename}` : '',
+    paymentReference: req.body?.paymentReference,
+  })),
+);
+router.post('/orders/:groupId/problem', handle((req) => buyerService.reportProblem(req.user.userId, req.params.groupId, req.body)));
 router.post('/orders/:groupId/received', handle((req) => buyerService.confirmReceived(req.user.userId, req.params.groupId)));
 // PayMongo (sandbox): open a checkout page, and ask PayMongo whether it was paid.
 router.post('/orders/:groupId/paymongo', handle((req) => paymongo.startPayment(req.user.userId, req.params.groupId)));

@@ -1,6 +1,6 @@
 import crypto from 'crypto';
 import Order from '../models/Order.js';
-import * as notificationRepo from '../repositories/notificationRepository.js';
+import { notify, links } from './notify.js';
 import { postOrderSystemMessage } from './chatService.js';
 import { getAppUrl } from './authService.js';
 
@@ -69,11 +69,11 @@ async function payableRows(buyerUserId, groupId) {
 export async function startPayment(buyerUserId, groupId) {
   const rows = await payableRows(buyerUserId, groupId);
 
-  if (rows.every((r) => r.paymentStatus === 'paid')) {
-    throw new Error('This order is already paid.');
-  }
   if (rows.some((r) => r.status === 'cancelled')) {
     throw new Error('This order was cancelled.');
+  }
+  if (rows.some((r) => r.paymentStatus !== 'unpaid')) {
+    throw new Error('This order is already paid.');
   }
 
   // Paid on the last page but not recorded yet (no webhook, app closed):
@@ -85,6 +85,9 @@ export async function startPayment(buyerUserId, groupId) {
       await markPaid(previous, earlier);
       throw new Error('This order is already paid.');
     }
+    // Retire the old page, so the buyer cannot pay on it as well as on the
+    // new one. Best effort: an already expired session refuses, which is fine.
+    await call('POST', `/checkout_sessions/${previous}/expire`).catch(() => {});
   }
 
   const { orderNumber } = rows[0];
@@ -135,17 +138,36 @@ function paidPaymentOf(session) {
  * not being paid yet, so the webhook and the app's own check arriving
  * together do not record the payment twice.
  */
-async function markPaid(checkoutId, payment) {
-  const rows = await Order.find({ paymongoCheckoutId: checkoutId, paymentStatus: { $ne: 'paid' } });
+export async function markPaid(checkoutId, payment) {
+  const rows = await Order.find({ paymongoCheckoutId: checkoutId, paymentStatus: 'unpaid' });
   if (!rows.length) return 0;
+
+  // The amount PayMongo collected has to be the amount the order asks for. A
+  // session for a different total is not this order's payment.
+  const expected = rows.reduce((sum, r) => sum + centavos(r.total), 0);
+  const paidAmount = Number(payment?.attributes?.amount);
+  if (Number.isFinite(paidAmount) && paidAmount !== expected) {
+    console.error('[paymongo] amount mismatch on', checkoutId, paidAmount, 'expected', expected);
+    await notify({
+      userId: rows[0].sellerId,
+      type: 'PAYMENT',
+      title: `Online payment for ${rows[0].orderNumber} needs checking`,
+      body: `PayMongo reported ₱${(paidAmount / 100).toFixed(2)} but the order is ₱${(expected / 100).toFixed(2)}. It was not marked paid.`,
+      link: links.sellerOrder(rows[0]._id),
+    });
+    return 0;
+  }
 
   const now = new Date();
   for (const row of rows) {
+    // Paid after the order was cancelled (the page was still open): the money
+    // is real, so it is recorded, and owed back.
+    const settled = row.status === 'cancelled' ? 'refund_due' : 'paid';
     const updated = await Order.findOneAndUpdate(
-      { _id: row._id, paymentStatus: { $ne: 'paid' } },
+      { _id: row._id, paymentStatus: 'unpaid' },
       {
         $set: {
-          paymentStatus: 'paid',
+          paymentStatus: settled,
           amountPaid: Number(row.total),
           paidAt: now,
           paymentReference: payment.id,
@@ -153,10 +175,11 @@ async function markPaid(checkoutId, payment) {
         },
         $push: {
           paymentHistory: {
-            status: 'paid',
+            status: settled,
+            kind: 'paymongo',
             amount: Number(row.total),
             reference: payment.id,
-            note: 'Confirmed by PayMongo',
+            note: settled === 'paid' ? 'Confirmed by PayMongo' : 'Paid through PayMongo after the order was cancelled',
             at: now,
           },
         },
@@ -164,12 +187,12 @@ async function markPaid(checkoutId, payment) {
     );
     if (!updated) continue;
 
-    await notificationRepo.createNotification({
+    await notify({
       userId: row.sellerId,
-      type: 'ORDER',
+      type: 'PAYMENT',
       title: `${row.orderNumber} paid online`,
       body: `PayMongo confirmed ₱${Number(row.total).toFixed(2)}${isTestKey() ? ' (sandbox, no real money)' : ''}. You can confirm the order.`,
-      link: `/client?tab=Orders&order=${row._id}`,
+      link: links.sellerOrder(row._id),
     });
   }
 
@@ -190,7 +213,7 @@ async function markPaid(checkoutId, payment) {
  */
 export async function verifyPayment(buyerUserId, groupId) {
   const rows = await payableRows(buyerUserId, groupId);
-  if (rows.every((r) => r.paymentStatus === 'paid')) return { paid: true };
+  if (rows.every((r) => r.paymentStatus !== 'unpaid')) return { paid: true };
 
   const checkoutId = rows.find((r) => r.paymongoCheckoutId)?.paymongoCheckoutId;
   if (!checkoutId) return { paid: false };
