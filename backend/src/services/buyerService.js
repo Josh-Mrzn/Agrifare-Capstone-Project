@@ -1,5 +1,6 @@
 import mongoose from 'mongoose';
 import Order from '../models/Order.js';
+import Product from '../models/Product.js';
 import { findUserByUserId } from '../repositories/userRepository.js';
 import * as workflow from './orderWorkflow.js';
 import { isGcash } from './orderRules.js';
@@ -86,6 +87,9 @@ function groupOrders(rows) {
       unitPrice: row.unitPrice,
       lineTotal: row.subtotal,
       status: row.status,
+      // The product's first photo, for the order cards. Empty when the
+      // listing was deleted; the app shows its placeholder then.
+      image: row.image || '',
       paymentStatus: row.paymentStatus,
       cancellation: row.cancellation?.status || 'none',
       complaint: row.complaint?.status || 'none',
@@ -153,8 +157,16 @@ function groupOrders(rows) {
   });
 }
 
+/** Puts each row's product photo on it, with one query for all of them. */
+async function withImages(rows) {
+  const ids = [...new Set(rows.map((r) => String(r.productId)).filter(Boolean))];
+  const products = await Product.find({ _id: { $in: ids } }).select('images').lean();
+  const imageOf = new Map(products.map((p) => [String(p._id), p.images?.[0] || '']));
+  return rows.map((r) => ({ ...r, image: imageOf.get(String(r.productId)) || '' }));
+}
+
 export const getMyOrders = async (buyerUserId, { ongoing } = {}) => {
-  const rows = await Order.find({ buyerUserId }).sort({ orderDate: -1 }).lean();
+  const rows = await withImages(await Order.find({ buyerUserId }).sort({ orderDate: -1 }).lean());
   const groups = groupOrders(rows);
 
   for (const g of groups) setCancelFlags(g);
@@ -165,7 +177,7 @@ export const getMyOrders = async (buyerUserId, { ongoing } = {}) => {
 };
 
 export const getMyOrder = async (buyerUserId, groupId) => {
-  const rows = await Order.find(matchGroup(buyerUserId, groupId)).lean();
+  const rows = await withImages(await Order.find(matchGroup(buyerUserId, groupId)).lean());
 
   if (!rows.length) throw new Error('Order not found');
 

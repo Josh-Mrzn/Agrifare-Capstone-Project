@@ -192,6 +192,13 @@ describe('order and account workflows', { skip }, () => {
     assert.equal(n.link, `/client?tab=orders&order=${row._id}`);
   });
 
+  test('the buyer\'s order list carries each product\'s photo', async () => {
+    const r = await api('GET', '/api/buyer/orders', 'buyer');
+    assert.equal(r.status, 200, msg(r));
+    const item = r.body.flatMap((o) => o.items).find((i) => i.productId === String(ids.rice));
+    assert.equal(item.image, '/x.png');
+  });
+
   test('a pending unpaid order is cancelled by the buyer at once', async () => {
     const r = await api('POST', `/api/buyer/orders/${ids.codGroup}/cancel`, 'buyer', { reason: 'Changed my mind' });
     assert.equal(r.status, 200, msg(r));
