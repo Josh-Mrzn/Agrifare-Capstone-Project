@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from 'react';
-import SellerAnalytics from '../../../components/analytics/SellerAnalytics';
+import SellerDashboard from '../../../components/analytics/SellerDashboard';
 import { fetchMailStatus } from '../../../services/clientApi';
 
 /**
@@ -12,5 +12,11 @@ export default function ReportsTab() {
   useEffect(() => {
     fetchMailStatus().then((res) => setMailReady(Boolean(res.data?.configured))).catch(() => {});
   }, []);
-  return <SellerAnalytics base="/analytics/seller" canEmail={mailReady} />;
+  return (
+    <SellerDashboard
+      base="/analytics/seller"
+      canEmail={mailReady}
+      greeting="Your sales from completed orders, in Philippine time."
+    />
+  );
 }

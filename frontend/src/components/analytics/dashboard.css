@@ -1,0 +1,30 @@
+/* One-page seller analytics (SellerDashboard). Matches the app's tokens. */
+.ad { --ad-green: #1f4d2b; --ad-good: #2e7d46; --ad-bad: #a4452c; }
+.ad-sub { color: var(--text-3); margin: 0 0 16px; }
+.ad-bar { display: flex; flex-wrap: wrap; gap: 12px; justify-content: space-between; align-items: center; margin-bottom: 18px; }
+.ad-seg { display: inline-flex; flex-wrap: wrap; background: var(--surface); border: 1px solid var(--border-strong); border-radius: 10px; padding: 3px; }
+.ad-seg button { border: 0; background: none; color: var(--text-3); font: 600 14px inherit; font-family: inherit; padding: 8px 16px; border-radius: 8px; cursor: pointer; }
+.ad-seg button.on { background: var(--gold); color: #1b2a1b; }
+.ad-seg button:focus-visible { outline: 2px solid var(--ad-green); outline-offset: 2px; }
+.ad-kpis { display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 12px; margin-bottom: 12px; }
+.ad-card { background: var(--surface); border: 1px solid var(--border-strong); border-radius: 12px; padding: 16px; min-width: 0; }
+.ad-card h2 { font-size: 18px; margin: 0; }
+.ad-kpi small { color: var(--text-3); display: block; }
+.ad-kpi b { font: 700 28px "Fraunces Variable", Fraunces, Georgia, serif; display: block; margin: 2px 0; }
+.ad-d { font-size: 13px; font-weight: 600; }
+.ad-d.up { color: var(--ad-good); }
+.ad-d.down { color: var(--ad-bad); }
+.ad-d.flat { color: var(--text-3); }
+.ad-grid { display: grid; grid-template-columns: 2fr 1fr; gap: 12px; margin-bottom: 12px; }
+.ad-grid2 { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; margin-bottom: 12px; }
+@media (max-width: 800px) { .ad-grid, .ad-grid2 { grid-template-columns: 1fr; } }
+.ad-ch { position: relative; height: 280px; margin-top: 10px; }
+.ad-note { color: var(--text-3); font-size: 13px; margin: 2px 0 0; }
+.ad-empty { color: var(--text-3); padding-top: 100px; text-align: center; margin: 0; }
+.ad-ins { border-left: 4px solid var(--gold); }
+.ad-ins p { margin: 8px 0 0; }
+.ad-table { width: 100%; border-collapse: collapse; margin-top: 8px; font-size: 14px; }
+.ad-table th, .ad-table td { text-align: left; padding: 8px 6px; border-bottom: 1px solid var(--border); }
+.ad-table th { color: var(--text-3); font-weight: 500; }
+.ad-table .n { text-align: right; }
+.ad-reports { margin-top: 12px; }

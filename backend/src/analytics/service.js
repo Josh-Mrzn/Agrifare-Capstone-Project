@@ -3,7 +3,7 @@ import { ORDER_STATUSES } from '../models/Order.js';
 import { RICE_VARIETIES } from '../models/Product.js';
 import * as data from './data.js';
 import {
-  resolvePeriod, badRequest, buckets, bucketStart, addMonths, addDays,
+  resolvePeriod, badRequest, buckets, bucketStart, addMonths, addDays, MODES, modeQuery,
 } from './period.js';
 import {
   summarize, change, timeSeries, alignComparison, extremes, biggestMoves, completionTimes,
@@ -15,7 +15,7 @@ import { sellerInsights, platformInsights } from './insights.js';
 
 const DAY = 24 * 60 * 60 * 1000;
 
-export const SELLER_SECTIONS = ['overview', 'sales', 'products', 'buyers', 'seasons', 'inventory'];
+export const SELLER_SECTIONS = ['dashboard', 'overview', 'sales', 'products', 'buyers', 'seasons', 'inventory'];
 export const PLATFORM_SECTIONS = ['overview', 'sales', 'sellers', 'products', 'users', 'seasons'];
 
 /**
@@ -145,6 +145,51 @@ function insightsOf(ctx) {
   return sellerInsights(ctx);
 }
 
+/**
+ * The one-page seller analytics: a Daily, Weekly, Monthly or Yearly view,
+ * optionally for one rice variety. Every figure uses the same definitions as
+ * the rest of this module (ANALYTICS.md), so it matches the reports.
+ */
+async function dashboard(scope, query = {}) {
+  const mode = MODES.includes(query.mode) ? query.mode : 'monthly';
+  const periodQuery = { ...modeQuery(mode), variety: query.variety };
+  const ctx = await sellerContext(scope, periodQuery, { withInventory: false });
+  const { summary: s, previous: p, buyers: b } = ctx;
+
+  // This calendar month against last month, whatever view is chosen.
+  const now = new Date();
+  const monthStart = bucketStart(now, 'month');
+  const lastMonthStart = addMonths(monthStart, -1);
+  const [thisMonth, lastMonth] = await Promise.all([
+    data.ordersBetween(scope, monthStart, addMonths(monthStart, 1), ctx.filters),
+    data.ordersBetween(scope, lastMonthStart, monthStart, ctx.filters),
+  ]);
+  const monthSales = summarize(thisMonth).sales;
+  const lastMonthSales = summarize(lastMonth).sales;
+  const monthLabel = now.toLocaleDateString('en-PH', { month: 'long', year: 'numeric', timeZone: 'Asia/Manila' });
+
+  return meta(ctx, {
+    mode,
+    kpis: [
+      kpi('month', `Earnings this month (${monthLabel})`, monthSales, lastMonthSales, { format: 'peso', vs: 'last month' }),
+      kpi('sales', 'Total sales (selected period)', s.sales, p?.sales, { format: 'peso' }),
+      kpi('kg', 'Total sold', s.kg, p?.kg, { format: 'kg' }),
+      kpi('orders', 'Completed orders', s.completedOrders, p?.completedOrders, { format: 'number' }),
+      kpi('aov', 'Average order value', s.aov, p?.aov, { format: 'peso' }),
+      kpi('repeat', 'Repeat buyers', b.buyers.filter((x) => x.orders >= 2).length, undefined, {
+        format: 'number', of: b.unique, note: 'Bought more than once',
+      }),
+    ],
+    series: ctx.series,
+    varieties: ctx.varieties.map((v) => ({ variety: v.variety, sales: v.sales, share: v.share, kg: v.kg })),
+    products: ctx.products.slice(0, 8).map((x) => ({ name: x.name, sales: x.sales, kg: x.kg })),
+    topBuyers: b.buyers.slice(0, 5).map((x) => ({ name: x.name, orders: x.orders, spent: x.spent })),
+    cancelledOrders: s.cancelledOrders,
+    refunded: s.refunded,
+    insights: insightsOf(ctx).slice(0, 4),
+  });
+}
+
 const pick = (list, categories) => list.filter((i) => categories.includes(i.category));
 
 // ---------------------------------------------------------------- seller
@@ -153,6 +198,7 @@ export async function sellerSection(scope, section, query = {}) {
   if (!SELLER_SECTIONS.includes(section)) throw badRequest('Unknown analytics section.');
   if (section === 'seasons') return seasons(scope, query);
   if (section === 'inventory') return inventorySection(scope, query);
+  if (section === 'dashboard') return dashboard(scope, query);
 
   const ctx = await sellerContext(scope, query, { withInventory: section === 'overview' });
   const { summary: s, previous: p } = ctx;

@@ -17,7 +17,7 @@ const DAY = 24 * 60 * 60 * 1000;
 
 export const PRESETS = ['today', '7d', '30d', '90d', '6m', '12m', 'ytd', 'custom'];
 export const COMPARES = ['previous', 'yoy', 'none'];
-export const GRANULARITIES = ['day', 'week', 'month', 'quarter'];
+export const GRANULARITIES = ['day', 'week', 'month', 'quarter', 'year'];
 
 /** Manila wall-clock fields of an instant. */
 export function local(date) {
@@ -66,6 +66,8 @@ export function bucketStart(date, granularity) {
       return manilaMidnight(l.year, l.month, 1);
     case 'quarter':
       return manilaMidnight(l.year, Math.floor(l.month / 3) * 3, 1);
+    case 'year':
+      return manilaMidnight(l.year, 0, 1);
     default:
       throw new Error(`Unknown granularity: ${granularity}`);
   }
@@ -77,6 +79,7 @@ export function nextBucket(start, granularity) {
     case 'week': return addDays(start, 7);
     case 'month': return addMonths(start, 1);
     case 'quarter': return addMonths(start, 3);
+    case 'year': return addMonths(start, 12);
     default: throw new Error(`Unknown granularity: ${granularity}`);
   }
 }
@@ -191,6 +194,31 @@ export function resolvePeriod(query = {}, now = new Date()) {
     },
     granularity,
   };
+}
+
+/**
+ * The four views of the analytics page, as a period query:
+ *   daily    the last 14 days, by day
+ *   weekly   the last 12 weeks (Monday to Sunday), by week
+ *   monthly  the last 12 months, by month
+ *   yearly   this year and the two before, by year
+ * Each ends today and is compared with the same length just before it.
+ */
+export const MODES = ['daily', 'weekly', 'monthly', 'yearly'];
+
+export function modeQuery(mode, now = new Date()) {
+  const today = startOfDay(now);
+  const l = local(today);
+  let start;
+  let granularity;
+  switch (mode) {
+    case 'daily': start = addDays(today, -13); granularity = 'day'; break;
+    case 'weekly': start = addDays(bucketStart(today, 'week'), -77); granularity = 'week'; break;
+    case 'yearly': start = manilaMidnight(l.year - 2, 0, 1); granularity = 'year'; break;
+    case 'monthly':
+    default: start = manilaMidnight(l.year, l.month - 11, 1); granularity = 'month'; break;
+  }
+  return { range: 'custom', from: toLocalDate(start), to: toLocalDate(today), granularity, compare: 'previous' };
 }
 
 export function badRequest(message) {

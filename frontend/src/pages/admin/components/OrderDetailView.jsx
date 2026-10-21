@@ -7,7 +7,6 @@ import { fetchRiders, assignRider } from '../../../services/riderApi';
 import {
   updateOrderStatus,
   reviewOrderPayment,
-  setOrderCourier,
   uploadSellerDeliveryProof,
   decideCancellation,
   recordRefund,
@@ -68,7 +67,7 @@ function nextStep(order) {
         return {
           text: d.assignmentStatus === 'declined'
             ? `Your rider declined this delivery${d.declineReason ? `: ${d.declineReason}` : ''}. Choose someone else under Delivery.`
-            : 'Choose who delivers it under Delivery: one of your riders, or a courier with its tracking number.',
+            : 'Choose which of your riders delivers it, under Delivery.',
           actions: [{ to: 'shipped', label: 'Send out', blocked: true }, { to: 'cancelled', label: 'Cancel order', ghost: true }],
         };
       }
@@ -290,12 +289,6 @@ function DeliverySection({ order, busy, act, onView }) {
   const d = order.delivery || {};
   const open = ['pending', 'confirmed', 'processing'].includes(order.status);
   const [riders, setRiders] = useState([]);
-  const [mode, setMode] = useState(d.courierName && d.riderUserId == null ? 'courier' : 'rider');
-  const [courier, setCourier] = useState({
-    courierName: d.riderUserId == null ? d.courierName || '' : '',
-    courierContact: d.riderUserId == null ? d.courierContact || '' : '',
-    courierReference: d.courierReference || '',
-  });
 
   useEffect(() => {
     if (!open || order.source !== 'storefront') return;
@@ -304,7 +297,6 @@ function DeliverySection({ order, busy, act, onView }) {
       .catch(() => setRiders([]));
   }, [open, order.source]);
 
-  const setC = (key) => (e) => setCourier((c) => ({ ...c, [key]: e.target.value }));
   const carrier = d.riderUserId != null
     ? `${d.courierName || 'Your rider'} (your rider, ${ASSIGNMENT_LABEL[d.assignmentStatus] || 'accepted'})`
     : d.courierName
@@ -337,69 +329,32 @@ function DeliverySection({ order, busy, act, onView }) {
         )}
 
         {open && order.source === 'storefront' && (
-          <div className="carrier">
-            <div className="tabs" role="tablist" aria-label="Who delivers">
-              <button type="button" role="tab" className="tab" aria-selected={mode === 'rider'} onClick={() => setMode('rider')}>Your rider</button>
-              <button type="button" role="tab" className="tab" aria-selected={mode === 'courier'} onClick={() => setMode('courier')}>Courier</button>
-            </div>
-
-            {mode === 'rider' && (
-              order.status === 'pending' ? (
-                <p className="muted">Confirm the order first, then choose who delivers it.</p>
-              ) : riders.length === 0 ? (
-                <p className="muted">You have no delivery people yet. Add one under Delivery.</p>
-              ) : (
-                <label className="field">
-                  <span className="field-label">Rider</span>
-                  <select
-                    className="select"
-                    value={d.riderUserId ?? ''}
-                    disabled={busy}
-                    onChange={(e) => act(
-                      () => assignRider(order._id, e.target.value === '' ? null : Number(e.target.value)),
-                      'Could not assign that rider.',
-                    )}
-                  >
-                    <option value="">Nobody yet</option>
-                    {riders.map((r) => (
-                      <option key={r.userId} value={r.userId}>
-                        {r.name}{r.activated ? '' : ' (not signed in yet)'}
-                      </option>
-                    ))}
-                  </select>
-                  <span className="field-hint">The rider sees only the orders you assign to them.</span>
-                </label>
-              )
-            )}
-
-            {mode === 'courier' && (
-              <form
-                className="form-grid"
-                onSubmit={(e) => {
-                  e.preventDefault();
-                  act(() => setOrderCourier(order._id, courier), 'Could not save the courier.');
-                }}
+          order.status === 'pending' ? (
+            <p className="muted">Confirm the order first, then choose who delivers it.</p>
+          ) : riders.length === 0 ? (
+            <p className="muted">You have no delivery people yet. Add one under Delivery.</p>
+          ) : (
+            <label className="field">
+              <span className="field-label">Rider</span>
+              <select
+                className="select"
+                value={d.riderUserId ?? ''}
+                disabled={busy}
+                onChange={(e) => act(
+                  () => assignRider(order._id, e.target.value === '' ? null : Number(e.target.value)),
+                  'Could not assign that rider.',
+                )}
               >
-                <div className="form-grid-3">
-                  <label className="field">
-                    <span className="field-label">Courier</span>
-                    <input className="input" value={courier.courierName} onChange={setC('courierName')} placeholder="LBC, J&T, Lalamove…" autoComplete="off" />
-                  </label>
-                  <label className="field">
-                    <span className="field-label">Tracking or booking no.</span>
-                    <input className="input" value={courier.courierReference} onChange={setC('courierReference')} autoComplete="off" spellCheck={false} />
-                  </label>
-                  <label className="field">
-                    <span className="field-label">Driver&rsquo;s mobile <span className="optional">(optional)</span></span>
-                    <input className="input" type="tel" inputMode="tel" value={courier.courierContact} onChange={setC('courierContact')} autoComplete="off" />
-                  </label>
-                </div>
-                <div>
-                  <button type="submit" className="btn btn-secondary" disabled={busy}>Save courier</button>
-                </div>
-              </form>
-            )}
-          </div>
+                <option value="">Nobody yet</option>
+                {riders.map((r) => (
+                  <option key={r.userId} value={r.userId}>
+                    {r.name}{r.activated ? '' : ' (not signed in yet)'}
+                  </option>
+                ))}
+              </select>
+              <span className="field-hint">The rider sees only the orders you assign to them, and accepts them in their app.</span>
+            </label>
+          )
         )}
       </div>
     </section>

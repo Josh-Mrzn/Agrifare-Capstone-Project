@@ -34,9 +34,6 @@ export const reviewOrderPayment = (id, data) => API.put(`/admin/orders/${id}/pay
 export const emailReport = (type, params = {}) => API.post(`/admin/reports/${type}/email`, params);
 export const fetchMailStatus = () => API.get('/admin/reports/mail-status');
 
-/** An outside courier (LBC, J&T, Lalamove) with its tracking number. */
-export const setOrderCourier = (id, data) => API.put(`/admin/orders/${id}/courier`, data);
-
 /** The seller's own photo at the door, for an order their courier carried. */
 export const uploadSellerDeliveryProof = (id, file, note, cashCollected) => {
   const fd = new FormData();

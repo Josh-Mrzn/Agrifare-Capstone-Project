@@ -13,9 +13,16 @@ import 'order_detail_screen.dart';
 /// One fetch feeds all six tabs. They are views of the same list, so
 /// refetching per tab would make switching feel slower than it is.
 class OrdersScreen extends StatefulWidget {
-  const OrdersScreen({super.key, this.initialStage = OrderStage.all});
+  const OrdersScreen({
+    super.key,
+    this.initialStage = OrderStage.all,
+    this.stages = OrderStage.statusTabs,
+  });
 
   final OrderStage initialStage;
+
+  /// Which tabs to show: the step-by-step ones, or Ongoing and History.
+  final List<OrderStage> stages;
 
   @override
   State<OrdersScreen> createState() => _OrdersScreenState();
@@ -24,9 +31,11 @@ class OrdersScreen extends StatefulWidget {
 class _OrdersScreenState extends State<OrdersScreen>
     with SingleTickerProviderStateMixin {
   late final TabController _tabs = TabController(
-    length: OrderStage.values.length,
+    length: widget.stages.length,
     vsync: this,
-    initialIndex: OrderStage.values.indexOf(widget.initialStage),
+    initialIndex: widget.stages.contains(widget.initialStage)
+        ? widget.stages.indexOf(widget.initialStage)
+        : 0,
   );
 
   List<OrderGroup> _orders = const [];
@@ -109,7 +118,7 @@ class _OrdersScreenState extends State<OrdersScreen>
               fontWeight: FontWeight.w500,
             ),
             tabs: [
-              for (final stage in OrderStage.values)
+              for (final stage in widget.stages)
                 Tab(
                   height: 46,
                   child: Row(
@@ -157,7 +166,7 @@ class _OrdersScreenState extends State<OrdersScreen>
           : TabBarView(
               controller: _tabs,
               children: [
-                for (final stage in OrderStage.values) _tabBody(stage),
+                for (final stage in widget.stages) _tabBody(stage),
               ],
             ),
     );
@@ -235,7 +244,10 @@ class _OrdersScreenState extends State<OrdersScreen>
       case OrderStage.returned:
         return Icons.assignment_return_outlined;
       case OrderStage.all:
+      case OrderStage.history:
         return Icons.receipt_long_outlined;
+      case OrderStage.ongoing:
+        return Icons.local_shipping_outlined;
     }
   }
 
@@ -253,6 +265,10 @@ class _OrdersScreenState extends State<OrdersScreen>
         return 'Nothing to review';
       case OrderStage.returned:
         return 'No cancelled orders';
+      case OrderStage.ongoing:
+        return 'No ongoing orders';
+      case OrderStage.history:
+        return 'No past orders yet';
     }
   }
 
@@ -270,6 +286,10 @@ class _OrdersScreenState extends State<OrdersScreen>
         return 'After an order arrives, you can tell others how it was.';
       case OrderStage.returned:
         return 'Orders you or the seller called off appear here.';
+      case OrderStage.ongoing:
+        return 'Orders being confirmed, prepared or delivered appear here.';
+      case OrderStage.history:
+        return 'Completed and cancelled orders are kept here.';
     }
   }
 }

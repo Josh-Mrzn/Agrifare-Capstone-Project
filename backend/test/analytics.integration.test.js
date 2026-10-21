@@ -168,6 +168,24 @@ describe('analytics API', { skip }, () => {
     assert.ok(body.buyers.every((b) => !('customerContact' in b) && !('deliveryAddress' in b)));
   });
 
+  test('the one-page dashboard agrees with the sales section for the same dates', async () => {
+    for (const mode of ['daily', 'weekly', 'monthly', 'yearly']) {
+      const { status, body } = await get(`/seller/dashboard?mode=${mode}`, 's1');
+      assert.equal(status, 200, mode);
+      const same = await get(`/seller/sales?range=custom&from=${body.period.from}&to=${body.period.to}&granularity=${body.period.granularity}`, 's1');
+      const k = Object.fromEntries(body.kpis.map((x) => [x.id, x]));
+      const s = Object.fromEntries(same.body.kpis.map((x) => [x.id, x]));
+      assert.equal(k.sales.value, s.sales.value, mode);
+      assert.equal(k.orders.value, s.orders.value, mode);
+      assert.equal(body.series.length, { daily: 14, weekly: 12, monthly: 12, yearly: 3 }[mode], mode);
+    }
+    const { body } = await get('/seller/dashboard?mode=monthly', 's1');
+    assert.ok(body.kpis.find((x) => x.id === 'month').label.startsWith('Earnings this month'));
+    assert.ok(Array.isArray(body.topBuyers) && Array.isArray(body.varieties) && Array.isArray(body.products));
+    const narrowed = await get('/seller/dashboard?mode=monthly&variety=Sinandomeng', 's1');
+    assert.ok(narrowed.body.varieties.every((v) => v.variety === 'Sinandomeng'));
+  });
+
   test('the variety filter narrows every figure', async () => {
     const { body } = await get('/seller/products?range=30d&variety=Sinandomeng', 's1');
     assert.equal(body.varieties.length, 1);

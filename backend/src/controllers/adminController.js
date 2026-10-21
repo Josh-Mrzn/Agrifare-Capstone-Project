@@ -127,14 +127,6 @@ export const updateOrderStatusHandler = async (req, res) => {
   }
 };
 
-export const setCourierHandler = async (req, res) => {
-  try {
-    res.json(await adminService.setCourier(req.params.id, req.user.userId, req.body || {}));
-  } catch (error) {
-    res.status(error.statusCode || 400).json({ message: error.message });
-  }
-};
-
 export const recordDeliveryHandler = async (req, res) => {
   try {
     res.json(await adminService.recordSellerDelivery(req.params.id, req.user.userId, {

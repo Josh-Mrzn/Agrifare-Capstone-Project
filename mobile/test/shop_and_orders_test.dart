@@ -57,12 +57,21 @@ void main() {
       ];
 
       for (final status in statuses) {
-        final tabs = OrderStage.values
+        final tabs = OrderStage.statusTabs
             .where((s) => s != OrderStage.all && s.matches(status))
             .toList();
 
         expect(tabs, hasLength(1), reason: '$status landed in $tabs');
       }
+    });
+
+    test('Ongoing and History split every status between them', () {
+      for (final status in ['pending', 'confirmed', 'processing', 'shipped', 'delivered', 'completed', 'cancelled']) {
+        final tabs = OrderStage.progressTabs.where((s) => s.matches(status)).toList();
+        expect(tabs, hasLength(1), reason: '$status landed in $tabs');
+      }
+      expect(OrderStage.ongoing.matches('delivered'), isTrue);
+      expect(OrderStage.history.matches('completed'), isTrue);
     });
 
     test('All takes everything', () {

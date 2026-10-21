@@ -200,52 +200,9 @@ export const updateOrderStatus = async (orderId, sellerId, status, reason) => {
 };
 
 /**
- * An outside courier - LBC, J&T, a Lalamove driver - instead of one of the
- * seller's own riders. The tracking number is what makes it a record rather
- * than "I sent it with someone". Applies to the whole seller-order.
- */
-export const setCourier = async (orderId, sellerId, { courierName, courierContact, courierReference }) => {
-  const order = await workflow.sellersOrder(orderId, sellerId);
-  if (['shipped', 'delivered', 'completed', 'cancelled'].includes(order.status)) {
-    throw new Error('The carrier can only be changed before the order goes out.');
-  }
-
-  const name = String(courierName || '').trim();
-  const ref = String(courierReference || '').trim();
-  if (!name) throw new Error('Which courier is carrying it?');
-  if (!ref) throw new Error('Add the tracking or booking number from the courier.');
-
-  const rows = await workflow.sellerOrderRows(order);
-  const previousRider = order.delivery?.riderUserId;
-  await Order.updateMany(
-    { _id: { $in: rows.map((r) => r._id) }, status: { $nin: ['cancelled'] } },
-    {
-      $set: {
-        // One carrier per order: recording a courier takes it off the rider.
-        'delivery.riderUserId': null,
-        'delivery.assignmentStatus': '',
-        'delivery.assignedAt': new Date(),
-        'delivery.courierName': name,
-        'delivery.courierContact': String(courierContact || '').trim(),
-        'delivery.courierReference': ref,
-      },
-    },
-  );
-  if (previousRider != null) {
-    await notify({
-      userId: previousRider,
-      title: `Delivery ${order.orderNumber} reassigned`,
-      body: 'The seller sent this order with a courier instead.',
-      link: links.riderDelivery(order._id),
-    });
-  }
-  return workflow.loadOrder(order._id);
-};
-
-/**
- * The seller's own "delivered", for an order their courier carried. Same rule
- * as the rider's: no photo, no delivered; and for cash on delivery, the
- * amount the courier collected.
+ * The seller's own "delivered", for an order sent with an outside courier
+ * before deliveries went through riders only. Same rule as the rider's: no
+ * photo, no delivered; and for cash on delivery, the amount collected.
  */
 export const recordSellerDelivery = async (orderId, sellerId, { proofPath, note, cashCollected }) => {
   const order = await workflow.sellersOrder(orderId, sellerId);

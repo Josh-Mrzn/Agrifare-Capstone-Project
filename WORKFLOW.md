@@ -24,8 +24,8 @@ The web order page shows both side by side, and the actions offered depend on bo
 | pending | confirmed | seller | GCash and PayMongo must be **paid**; no open cancellation request; enough stock (deducted now) |
 | pending, confirmed, processing | cancelled | seller (reason required), or buyer directly while pending and unpaid | stock returned exactly once; payment moves to refund_due if money or a receipt came in |
 | confirmed | processing | seller | |
-| processing | shipped | seller, or the rider ("Picked up. Start delivery") | a rider who **accepted**, or a named courier with a tracking number |
-| shipped | delivered | the rider ("Mark as delivered"), or the seller for a courier delivery | photo at the door; for cash on delivery, the cash collected |
+| processing | shipped | seller, or the rider ("Picked up. Start delivery") | one of the seller's riders, who **accepted** |
+| shipped | delivered | the rider ("Mark as delivered") | photo at the door; for cash on delivery, the cash collected |
 | delivered | completed | buyer ("I received my order"); seller after 3 days; the system after 7 days | paid; no open cancellation request; no open problem |
 
 Out for delivery (`shipped`) and later cannot be cancelled. After delivery the buyer uses **Report a problem**.
@@ -65,7 +65,7 @@ Nothing else is allowed: paid never goes back to unpaid or rejected, and a refun
 5. At the door: take the **photo** (saved straight away), enter the **cash collected** for cash on delivery, then **Mark as delivered**. A dropped connection is retried, and pressing again after it went through returns the delivered order rather than an error.
 6. The rider and the buyer can message each other only about that delivery, and only while it is open.
 
-A seller can also send an order with an outside courier (name and tracking number) and mark it delivered with their own photo (and the cash collected).
+Deliveries go through the seller's own riders only. The outside-courier option was removed; orders that were already sent with a courier before that can still be marked delivered by the seller with a photo (and the cash collected).
 
 ## Completion
 

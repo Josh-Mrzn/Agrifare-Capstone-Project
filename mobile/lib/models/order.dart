@@ -12,11 +12,23 @@ enum OrderStage {
   toShip('To Ship'),
   toReceive('To Receive'),
   toReview('To Review'),
-  returned('Return');
+  returned('Return'),
+
+  /// Still moving: from placed until the buyer has it and it is closed.
+  ongoing('Ongoing'),
+
+  /// Finished one way or the other: completed or cancelled.
+  history('History');
 
   const OrderStage(this.label);
 
   final String label;
+
+  /// The step-by-step tabs (Profile → My Orders).
+  static const statusTabs = [all, toPay, toShip, toReceive, toReview, returned];
+
+  /// The two-tab view from the Orders button on Home.
+  static const progressTabs = [ongoing, history];
 
   /// Which server statuses belong under this tab. Empty means every one.
   Set<String> get statuses {
@@ -35,6 +47,10 @@ enum OrderStage {
         return const {'delivered', 'completed'};
       case OrderStage.returned:
         return const {'cancelled'};
+      case OrderStage.ongoing:
+        return const {'pending', 'confirmed', 'processing', 'shipped', 'delivered'};
+      case OrderStage.history:
+        return const {'completed', 'cancelled'};
     }
   }
 

@@ -11,7 +11,6 @@ import {
   getMyCustomers,
   updateOrderStatusHandler,
   reviewOrderPaymentHandler,
-  setCourierHandler,
   recordDeliveryHandler,
   emailReportHandler,
   mailStatusHandler,
@@ -43,7 +42,6 @@ router.get('/orders/customers', getMyCustomers);
 router.get('/orders', viewOrders);
 router.put('/orders/:id/status', updateOrderStatusHandler);
 router.put('/orders/:id/payment', reviewOrderPaymentHandler);
-router.put('/orders/:id/courier', setCourierHandler);
 router.put('/orders/:id/cod', correctCodHandler);
 router.put('/orders/:id/refund', recordRefundHandler);
 router.put('/orders/:id/cancellation', decideCancellationHandler);

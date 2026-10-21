@@ -249,13 +249,12 @@ may laman mula sa dalawang seller.
 |---|---|
 | `PUT /admin/orders/:id/status` | `status`, `reason`. Sumusunod sa mga patakaran sa ibaba |
 | `PUT /admin/orders/:id/payment` | `paid`, `reference`, `amount`, `note`. Para sa lahat ng linya ng parehong checkout ng seller; naitatala sa `paymentHistory` |
-| `PUT /admin/orders/:id/courier` | `courierName`, `courierReference`, `courierContact`: courier na hindi sariling rider |
 | `POST /admin/orders/:id/delivered` | `proof` (litrato), `note`: seller ang nag-upload ng litrato sa pinto |
 
 Mga patakaran ng status (para sa order mula sa app):
 
 - `confirmed`: kapag GCash, kailangang `paid` na.
-- `shipped`: kailangang may rider, o courier na may tracking number.
+- `shipped`: kailangang may rider na tumanggap (accepted).
 - `delivered`: kailangang may litrato sa pinto.
 - `completed`: ang buyer ang nagkukumpirma; puwedeng isara ng seller pagkalipas
   ng 3 araw mula sa delivery.
@@ -302,7 +301,7 @@ parehong key, parehong order — hindi nadodoble.
 | PUT | `/orders/:id/refund` | `{ amount?, reference, note }` |
 | PUT | `/orders/:id/cod` | `{ amount, note }` — pagtama ng cash, may dahilan |
 | PUT | `/orders/:id/problem` | `{ note }` |
-| POST | `/orders/:id/delivered` | multipart `proof`, `note`, `cashCollected` (courier) |
+| POST | `/orders/:id/delivered` | multipart `proof`, `note`, `cashCollected` (para lang sa lumang courier na order) |
 
 ### Rider (`/api/riders/me`, rider lang)
 
@@ -323,3 +322,10 @@ parehong key, parehong order — hindi nadodoble.
 - `POST /api/chat/send` tumatanggap ng `orderRef` (groupId) para sa rider ↔ buyer.
 - `POST /api/jobs/auto-complete` — header `x-cron-secret`; wala kapag walang `CRON_SECRET`.
 - `DELETE /api/superadmin/users/:id` — nagde-deactivate na, hindi nagbubura.
+
+### Analytics ng seller sa isang pahina
+
+`GET /api/analytics/seller/dashboard?mode=daily|weekly|monthly|yearly&variety=`
+(at `/api/analytics/platform/sellers/:id/dashboard` para sa Super Admin):
+mga KPI (kita ngayong buwan, benta, kg, completed orders, average order,
+repeat buyers), `series`, `varieties`, `products`, `topBuyers`, `insights`.

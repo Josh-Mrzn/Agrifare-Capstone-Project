@@ -118,7 +118,7 @@ export function transitionBlocker(order, next, now = new Date(), { byBuyer = fal
     const hasRider = delivery.riderUserId != null;
     const hasCourier = Boolean(delivery.courierName && delivery.courierReference);
     if (!hasRider && !hasCourier) {
-      return 'Assign one of your delivery people, or record the courier and its tracking number, before shipping.';
+      return 'Assign one of your delivery people before sending it out.';
     }
     if (hasRider && delivery.assignmentStatus === 'assigned') {
       return 'Wait for the delivery person to accept this delivery.';

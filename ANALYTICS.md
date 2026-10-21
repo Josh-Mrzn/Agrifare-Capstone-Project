@@ -120,6 +120,18 @@ The findings are fixed rules applied to the numbers above. No language model or 
 - **Geographic breakdowns.** An order stores a free-text delivery address. The structured province and city live on the buyer's saved addresses and are not copied onto orders. Any breakdown by place would be a guess, so there is none.
 - **Seasonality claims.** These need at least two years of completed sales to mean anything. Until then the page says how short the history is.
 
+## The seller's Analytics page
+
+One page with **Daily** (last 14 days), **Weekly** (last 12 weeks, Monday to Sunday), **Monthly** (last 12 months) and **Yearly** (this year and the two before), each ending today, and an optional rice variety. It comes from `GET /api/analytics/seller/dashboard` and shows:
+
+- **Earnings this month:** completed sales in the current calendar month, against last month, whatever view is chosen.
+- **Total sales, total sold (kg), completed orders, average order value:** for the selected view, against the same number of days just before it.
+- **Repeat buyers:** buyers with 2 or more completed orders in the view, out of all buyers in it.
+- **Sales trend, share per variety, best-selling rice (product and pack size), top 5 buyers, and up to 4 written findings.**
+- **Reports and exports** (CSV, XLSX, PDF, email) for exactly the dates of the view.
+
+The figures use the definitions above, so they match the reports: the tests check the dashboard against the Sales section for the same dates. A Super Admin sees the same page for one seller.
+
 ## One source
 
 The seller dashboard, the Super Admin overview figure and a seller's page in the Super Admin portal read these same sections. The older per-seller and platform figures (`/api/admin/orders/analytics`, `/orders/breakdown`, `/api/superadmin/users/:id/analytics`, `/analytics/revenue`, `/analytics/businesses`) were removed, so no page can show a second, different "sales" number.

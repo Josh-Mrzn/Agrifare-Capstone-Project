@@ -398,3 +398,17 @@ describe('exports', () => {
     assert.ok(buf.length > 1000);
   });
 });
+
+test('each analytics view ends today and covers the promised buckets', async () => {
+  const { modeQuery, resolvePeriod, buckets } = await import('../src/analytics/period.js');
+  const now = new Date('2026-10-21T04:00:00Z'); // 12:00 noon in Manila
+  const expect = { daily: ['2026-10-08', 'day', 14], weekly: ['2026-08-03', 'week', 12], monthly: ['2025-11-01', 'month', 12], yearly: ['2024-01-01', 'year', 3] };
+  for (const [mode, [from, granularity, count]] of Object.entries(expect)) {
+    const q = modeQuery(mode, now);
+    assert.equal(q.from, from, mode);
+    assert.equal(q.to, '2026-10-21', mode);
+    assert.equal(q.granularity, granularity, mode);
+    const period = resolvePeriod(q, now);
+    assert.equal(buckets(period.start, period.end, period.granularity).length, count, mode);
+  }
+});

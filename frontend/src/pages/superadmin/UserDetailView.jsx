@@ -3,7 +3,7 @@ import { ArrowLeft } from 'lucide-react';
 import { API_ORIGIN } from '../../services/authApi';
 import { formatDate, initialsOf } from '../../utils/format';
 import BuyerProfile from '../../components/analytics/BuyerProfile';
-import SellerAnalytics from '../../components/analytics/SellerAnalytics';
+import SellerDashboard from '../../components/analytics/SellerDashboard';
 
 const ROLE_LABEL = { seller: 'Seller', buyer: 'Buyer', rider: 'Rider', superadmin: 'Super Admin' };
 
@@ -75,7 +75,10 @@ export default function UserDetailView({ user, onBack, onEdit, onToggleStatus })
       </div>
 
       {isSeller && user.userId != null && (
-        <SellerAnalytics base={`/analytics/platform/sellers/${user.userId}`} heading={<h3 className="an-seller-title">Analytics for {user.name}</h3>} />
+        <>
+          <h3 className="an-seller-title">Analytics for {user.name}</h3>
+          <SellerDashboard base={`/analytics/platform/sellers/${user.userId}`} />
+        </>
       )}
     </div>
   );

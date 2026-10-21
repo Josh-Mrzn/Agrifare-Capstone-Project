@@ -5,6 +5,7 @@ import 'package:flutter/material.dart';
 
 import '../models/cart.dart';
 import '../models/notification_model.dart';
+import '../models/order.dart';
 import '../models/product.dart';
 import '../models/user_model.dart';
 import '../services/api_client.dart';
@@ -15,6 +16,7 @@ import '../widgets/agri_banner.dart';
 import '../widgets/clay.dart';
 import 'cart_screen.dart';
 import 'notifications_screen.dart';
+import 'orders_screen.dart';
 import 'product_detail_screen.dart';
 
 /// The storefront.
@@ -260,6 +262,20 @@ class _HomeScreenState extends State<HomeScreen> {
                 },
               );
             },
+          ),
+          const SizedBox(width: 8),
+          // Orders: what is on its way, and everything bought before.
+          ClayIconButton(
+            icon: Icons.receipt_long_rounded,
+            size: 42,
+            onPressed: () => Navigator.of(context).push(
+              MaterialPageRoute(
+                builder: (_) => const OrdersScreen(
+                  initialStage: OrderStage.ongoing,
+                  stages: OrderStage.progressTabs,
+                ),
+              ),
+            ),
           ),
           const SizedBox(width: 8),
           AnimatedBuilder(
