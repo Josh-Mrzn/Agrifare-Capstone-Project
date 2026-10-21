@@ -120,7 +120,11 @@ export default function HighlightsSection() {
           </p>
         </header>
 
-        <div className={`lp-hl-stage reveal${started && !ended ? ' is-playing' : ''}`}>
+        {/* The fade-in sits on its own wrapper: useReveal marks it visible by
+            adding a class directly, and React re-rendering this element's
+            className on play would wipe that class and hide the player. */}
+        <div className="reveal">
+        <div className={`lp-hl-stage${started && !ended ? ' is-playing' : ''}`}>
           <video
             ref={videoRef}
             className="lp-hl-video"
@@ -158,6 +162,7 @@ export default function HighlightsSection() {
               </span>
             </button>
           )}
+        </div>
         </div>
 
         <ol className="lp-hl-chapters reveal" aria-label="Scenes" style={{ '--i': 1 }}>
