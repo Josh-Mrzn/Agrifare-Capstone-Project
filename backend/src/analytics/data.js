@@ -199,3 +199,14 @@ export async function findUser(userId) {
 export async function ordersOfBuyer(buyerUserId) {
   return Order.find({ buyerUserId }).select(ORDER_FIELDS).sort({ orderDate: 1 }).lean();
 }
+
+/**
+ * Seller applications for the Super Admin dashboard: everyone who applied,
+ * with what the reviewer needs (submitted when, permits and how many are
+ * verified) and the decision, if any.
+ */
+export async function sellerApplications() {
+  return User.find({ role: 'seller' })
+    .select('userId name email status statusReason createdAt application documents sellerProfile.businessName')
+    .lean();
+}

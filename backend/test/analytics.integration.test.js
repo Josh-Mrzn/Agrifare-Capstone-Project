@@ -143,6 +143,26 @@ describe('analytics API', { skip }, () => {
     assert.equal(overview.kpis.find((x) => x.id === 'sales').value, 9500);
   });
 
+  test('the marketplace dashboard agrees with the sales section and lists every seller', async () => {
+    for (const mode of ['daily', 'weekly', 'monthly', 'yearly']) {
+      const { status, body } = await get(`/platform/dashboard?mode=${mode}`, 'admin');
+      assert.equal(status, 200, mode);
+      const same = await get(`/platform/sales?range=custom&from=${body.period.from}&to=${body.period.to}&granularity=${body.period.granularity}`, 'admin');
+      const k = Object.fromEntries(body.kpis.map((x) => [x.id, x]));
+      assert.equal(k.sales.value, same.body.kpis.find((x) => x.id === 'sales').value, mode);
+      assert.equal(body.accountSeries.length, body.series.length, mode);
+    }
+    const { body } = await get('/platform/dashboard?mode=monthly', 'admin');
+    assert.deepEqual(body.topSellers.map((x) => x.sellerId).sort(), [2, 3, 4]);
+    assert.equal(body.topSellers.find((x) => x.sellerId === 4).sales, 0);
+    assert.equal(body.topSellers.reduce((a, x) => a + x.sales, 0), body.kpis.find((x) => x.id === 'sales').value);
+    for (const [id, list] of Object.entries(body.varietiesBySeller)) {
+      assert.equal(list.reduce((a, v) => a + v.sales, 0), body.topSellers.find((x) => x.sellerId === Number(id)).sales);
+    }
+    assert.equal(body.applications.approved, 3);
+    assert.equal((await get('/platform/dashboard', 's1')).status, 403);
+  });
+
   test('a Super Admin sees one seller exactly as the seller does', async () => {
     const mine = (await get('/seller/sales?range=30d', 's1')).body;
     const theirs = (await get('/platform/sellers/2/sales?range=30d', 'admin')).body;

@@ -16,7 +16,7 @@ import { sellerInsights, platformInsights } from './insights.js';
 const DAY = 24 * 60 * 60 * 1000;
 
 export const SELLER_SECTIONS = ['dashboard', 'overview', 'sales', 'products', 'buyers', 'seasons', 'inventory'];
-export const PLATFORM_SECTIONS = ['overview', 'sales', 'sellers', 'products', 'users', 'seasons'];
+export const PLATFORM_SECTIONS = ['dashboard', 'overview', 'sales', 'sellers', 'products', 'users', 'seasons'];
 
 /**
  * Who may see what. The seller id never comes from the request for a seller:
@@ -362,8 +362,94 @@ async function platformContext(query) {
   };
 }
 
+/**
+ * The Super Admin's one-page marketplace analytics: Daily, Weekly, Monthly
+ * or Yearly. Sales use the same definitions as everywhere else; the account
+ * and application figures come from the accounts themselves.
+ */
+async function platformDashboard(query = {}) {
+  const mode = MODES.includes(query.mode) ? query.mode : 'monthly';
+  const ctx = await platformContext(modeQuery(mode));
+  const { period, rows, varietyOf, summary: s, previous: p } = ctx;
+
+  const [applications, accounts, prevAccounts] = await Promise.all([
+    data.sellerApplications(),
+    data.usersCreatedBetween(period.start, period.end),
+    period.comparison ? data.usersCreatedBetween(period.comparison.start, period.comparison.end) : [],
+  ]);
+
+  const approvedSellers = applications.filter((u) => u.status === 'active');
+  const pending = applications
+    .filter((u) => u.status === 'pending' && u.application?.submittedAt)
+    .sort((a, b) => new Date(a.application.submittedAt) - new Date(b.application.submittedAt));
+  const inPeriod = (d) => d && new Date(d) >= period.start && new Date(d) < period.end;
+  const rejectedInPeriod = applications.filter((u) => u.status === 'rejected' && inPeriod(u.application?.decidedAt)).length;
+
+  // Every approved seller, with what they sold; those who sold nothing too.
+  const salesBy = new Map(ctx.sellers.map((x) => [x.sellerId, x]));
+  const topSellers = approvedSellers
+    .map((u) => ({ sellerId: u.userId, name: u.sellerProfile?.businessName || u.name, sales: salesBy.get(u.userId)?.sales || 0 }))
+    .sort((a, b) => b.sales - a.sales);
+
+  // Best-selling rice for the marketplace, and for each seller, so the page
+  // can switch between them without asking again.
+  const varietiesFor = (list) => varietyTable(list, varietyOf).map((v) => ({ variety: v.variety, sales: v.sales }));
+  const bySeller = {};
+  for (const x of topSellers) {
+    if (x.sales > 0) bySeller[x.sellerId] = varietiesFor(rows.filter((r) => r.sellerId === x.sellerId));
+  }
+
+  const accountSeries = buckets(period.start, period.end, period.granularity).map((b) => {
+    const within = accounts.filter((a) => new Date(a.createdAt) >= b.start && new Date(a.createdAt) < b.end);
+    return {
+      start: b.start,
+      buyers: within.filter((a) => a.role === 'buyer').length,
+      sellers: within.filter((a) => a.role === 'seller').length,
+    };
+  });
+  const newAccounts = accounts.filter((a) => ['buyer', 'seller'].includes(a.role)).length;
+  const prevNewAccounts = prevAccounts.filter((a) => ['buyer', 'seller'].includes(a.role)).length;
+  const withSales = ctx.sellers.filter((x) => x.sales > 0 && approvedSellers.some((u) => u.userId === x.sellerId)).length;
+
+  const top = topSellers[0];
+  return meta(ctx, {
+    mode,
+    banner: {
+      topSeller: top && top.sales > 0 ? { name: top.name, share: s.sales ? Math.round((top.sales / s.sales) * 100) : 0 } : null,
+      pending: pending.length,
+    },
+    kpis: [
+      kpi('sales', 'Marketplace sales', s.sales, p?.sales, { format: 'peso' }),
+      kpi('orders', 'Completed orders', s.completedOrders, p?.completedOrders, { format: 'number' }),
+      kpi('sellers', 'Sellers with sales', withSales, undefined, { format: 'number', of: approvedSellers.length, note: 'Approved sellers' }),
+      kpi('accounts', 'New accounts', newAccounts, period.comparison ? prevNewAccounts : undefined, { format: 'number' }),
+      kpi('pending', 'Pending applications', pending.length, undefined, { format: 'number', note: 'Waiting for review' }),
+      kpi('rejected', 'Rejected applications', rejectedInPeriod, undefined, { format: 'number', note: 'In this period' }),
+    ],
+    series: ctx.series,
+    applications: {
+      approved: approvedSellers.length,
+      pending: pending.length,
+      rejected: applications.filter((u) => u.status === 'rejected').length,
+    },
+    accountSeries,
+    topSellers,
+    varieties: varietiesFor(rows),
+    varietiesBySeller: bySeller,
+    pendingApplications: pending.map((u) => ({
+      userId: u.userId,
+      name: u.sellerProfile?.businessName || u.name,
+      email: u.email,
+      submittedAt: u.application.submittedAt,
+      permits: (u.documents || []).length,
+      verifiedPermits: (u.documents || []).filter((d) => d.status === 'verified').length,
+    })),
+  });
+}
+
 export async function platformSection(section, query = {}) {
   if (!PLATFORM_SECTIONS.includes(section)) throw badRequest('Unknown analytics section.');
+  if (section === 'dashboard') return platformDashboard(query);
   if (section === 'seasons') return seasons({}, query);
   if (section === 'users') return usersSection(query);
 

@@ -1,5 +1,6 @@
-import React, { useEffect, useRef, useState } from 'react';
-import Chart from 'chart.js/auto';
+import React, { useEffect, useState } from 'react';
+import { COLORS, peso, bucketLabel, formatKpi } from './dashboardFormat';
+import { Delta, ChartCanvas } from './DashboardParts';
 import { fetchSection, fetchOptions } from '../../services/analyticsApi';
 import { getErrorMessage } from '../../services/authApi';
 import ExportPanel from './ExportPanel';
@@ -20,57 +21,12 @@ const MODES = [
   { id: 'yearly', label: 'Yearly', trend: 'by year' },
 ];
 
-const COLORS = ['#1f4d2b', '#c9a24a', '#6a9a5b', '#8a5a2b', '#b9c28a', '#3b3b3b', '#5a7a8c'];
-
 const REPORTS = [
   { id: 'sales', title: 'Sales report', text: 'Every completed order line with buyer, rice, pack size, fees and total.' },
   { id: 'orders', title: 'Orders and transactions', text: 'Every order line in the period with its order and payment status.' },
   { id: 'products', title: 'Product and variety performance', text: 'Sales, share, quantity and price per kg for each product and variety.' },
   { id: 'buyers', title: 'Buyer analytics', text: 'Buyers with their orders, spend and type, plus past buyers who have gone quiet.' },
 ];
-
-const peso = (n) => `₱${Math.round(Number(n) || 0).toLocaleString('en-PH')}`;
-const MON = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
-
-/** A bucket's label in Manila time: "Oct 14", "Oct 25", "2026". */
-function bucketLabel(iso, mode) {
-  const d = new Date(new Date(iso).getTime() + 8 * 3600 * 1000);
-  const m = MON[d.getUTCMonth()];
-  if (mode === 'yearly') return String(d.getUTCFullYear());
-  if (mode === 'monthly') return `${m} ${String(d.getUTCFullYear()).slice(2)}`;
-  return `${m} ${d.getUTCDate()}`;
-}
-
-function formatKpi(k) {
-  if (k.value == null) return '—';
-  if (k.format === 'peso') return peso(k.value);
-  if (k.format === 'kg') return `${Math.round(k.value).toLocaleString('en-PH')} kg`;
-  if (k.of != null) return `${k.value} of ${k.of}`;
-  return Number(k.value).toLocaleString('en-PH');
-}
-
-function Delta({ kpi }) {
-  if (kpi.note && kpi.previous == null) return <span className="ad-d flat">{kpi.note}</span>;
-  const pct = kpi.change?.pct;
-  if (pct == null) return <span className="ad-d flat">No comparison available</span>;
-  const dir = pct > 0 ? 'up' : pct < 0 ? 'down' : 'flat';
-  return (
-    <span className={`ad-d ${dir}`}>
-      {pct > 0 ? '▲ ' : pct < 0 ? '▼ ' : ''}{Math.abs(pct).toFixed(1)}% vs {kpi.vs || 'previous period'}
-    </span>
-  );
-}
-
-/** One Chart.js chart on a canvas, rebuilt when its config changes. */
-function ChartCanvas({ config, label }) {
-  const ref = useRef(null);
-  useEffect(() => {
-    if (!ref.current) return undefined;
-    const chart = new Chart(ref.current, config);
-    return () => chart.destroy();
-  }, [config]);
-  return <canvas ref={ref} role="img" aria-label={label} />;
-}
 
 export default function SellerDashboard({ base = '/analytics/seller', canEmail = false, greeting }) {
   const [mode, setMode] = useState('monthly');

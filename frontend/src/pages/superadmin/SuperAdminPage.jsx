@@ -126,7 +126,7 @@ export default function SuperAdminPage() {
     overview: <Overview accounts={accounts} pending={pending} revenue={revenue} run={run} go={go} />,
     users: <UsersSection accounts={accounts} pending={pending} run={run} me={me} />,
     credentials: <CredentialsPanel />,
-    analytics: <BusinessAnalytics />,
+    analytics: <BusinessAnalytics onChanged={loadAccounts} />,
     audit: <AuditLogPanel />,
     settings: <SettingsPanel />,
   }[active];

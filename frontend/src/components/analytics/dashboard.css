@@ -28,3 +28,20 @@
 .ad-table th { color: var(--text-3); font-weight: 500; }
 .ad-table .n { text-align: right; }
 .ad-reports { margin-top: 12px; }
+
+/* Super Admin page */
+.ad-ban { background: var(--surface); border: 1px solid var(--border-strong); border-left: 4px solid var(--gold); border-radius: 10px; padding: 12px 14px; margin-bottom: 12px; }
+.ad-kpis-6 { grid-template-columns: repeat(auto-fit, minmax(140px, 1fr)); }
+.ad-kpis-6 .ad-kpi b { font-size: 25px; }
+.ad-sellers { margin-top: 8px; display: grid; gap: 2px; max-height: 290px; overflow-y: auto; }
+.ad-srow { display: grid; grid-template-columns: minmax(90px, 140px) 1fr 86px; gap: 8px; align-items: center; width: 100%; border: 0; background: none; color: var(--text); font: inherit; text-align: left; padding: 7px 6px; border-radius: 8px; cursor: pointer; }
+.ad-srow:hover, .ad-srow.on { background: var(--bg); }
+.ad-srow:focus-visible { outline: 2px solid var(--ad-green); outline-offset: 1px; }
+.ad-srow-name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.ad-srow-track { height: 9px; background: var(--border-strong); border-radius: 6px; overflow: hidden; }
+.ad-srow-track i { display: block; height: 100%; background: var(--ad-green); }
+.ad-srow-value { text-align: right; font-weight: 600; }
+.ad-apps { margin-top: 8px; }
+.ad-app { display: flex; flex-wrap: wrap; justify-content: space-between; align-items: center; gap: 8px; padding: 10px 0; border-top: 1px solid var(--border); }
+.ad-app p { margin: 0; }
+.ad-app-actions { display: flex; gap: 6px; }

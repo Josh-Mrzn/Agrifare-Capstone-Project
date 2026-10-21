@@ -132,6 +132,16 @@ One page with **Daily** (last 14 days), **Weekly** (last 12 weeks, Monday to Sun
 
 The figures use the definitions above, so they match the reports: the tests check the dashboard against the Sales section for the same dates. A Super Admin sees the same page for one seller.
 
+## The Super Admin's Analytics page
+
+The same four views for the whole marketplace, from `GET /api/analytics/platform/dashboard`:
+
+- **Marketplace sales and completed orders:** against the same number of days just before.
+- **Sellers with sales:** approved sellers with at least one completed sale in the view, out of all approved sellers.
+- **New accounts:** buyers and sellers who signed up in the view (riders and admins are left out).
+- **Pending applications:** submitted and waiting now. **Rejected applications:** decided in the view.
+- **Charts:** marketplace sales, applications by status (all time), new accounts by bucket, top sellers (click one to see their best-selling rice), and pending applications with Approve and Reject (approval needs a verified permit, as on the Users page).
+
 ## One source
 
 The seller dashboard, the Super Admin overview figure and a seller's page in the Super Admin portal read these same sections. The older per-seller and platform figures (`/api/admin/orders/analytics`, `/orders/breakdown`, `/api/superadmin/users/:id/analytics`, `/analytics/revenue`, `/analytics/businesses`) were removed, so no page can show a second, different "sales" number.
