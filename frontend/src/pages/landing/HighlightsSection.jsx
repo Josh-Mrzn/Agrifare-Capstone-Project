@@ -10,7 +10,7 @@ import React, { useEffect, useRef, useState } from 'react';
  * the current scene lights up and fills, so the strip doubles as a timeline.
  */
 
-const VIDEO_SRC = '/media/agrifair-highlights.mp4';
+const VIDEO_SRC = '/media/agrifair-highlights-v2.mp4';
 const POSTER = '/media/agrifair-highlights-poster.jpg';
 
 const CHAPTERS = [
