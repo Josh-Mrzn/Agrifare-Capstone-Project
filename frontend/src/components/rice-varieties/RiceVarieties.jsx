@@ -23,6 +23,11 @@ const N = RICE_VARIETIES.length;
 const U = N - 0.2;
 const DIAL_C = 2 * Math.PI * 54;
 const DRAG_DEG_PER_PX = 0.6;
+// How quickly the shown state catches up with the scroll position (seconds).
+// A wheel moves the page in steps; easing toward it turns steps into a glide.
+const SCROLL_EASE = 0.14;
+// How long a flicked mound keeps coasting after it is let go (seconds).
+const SPIN_COAST = 0.5;
 
 // Photos only when every variety has them; until then the grains are drawn.
 const PHOTO_MODE = RICE_VARIETIES.every((v) => v.photo || (v.frames && v.frames.length));
@@ -33,10 +38,14 @@ const smooth = (x) => x * x * (3 - 2 * x);
 const mod360 = (d) => ((d % 360) + 360) % 360;
 const pad2 = (n) => String(n).padStart(2, '0');
 
-function scrollState(section) {
+/** How far through the section the page is, 0..U. */
+function scrollProgress(section) {
   const rect = section.getBoundingClientRect();
   const range = Math.max(1, rect.height - window.innerHeight);
-  const p = clamp01(-rect.top / range) * U;
+  return clamp01(-rect.top / range) * U;
+}
+
+function stateAt(p) {
   const idx = Math.min(N - 1, Math.floor(p));
   const local = p - idx;
   const spin = smooth(clamp01((local - 0.05) / 0.65)) * 360;
@@ -69,10 +78,16 @@ export default function RiceVarieties() {
 
     let raf = 0;
     let visible = false;
+    let progress = 0;
+    let lastFrame = 0;
+    // The turn added by hand, in degrees. It is kept, not sprung back, so the
+    // mound can be turned as far as anyone likes; a flick keeps it coasting.
     let drag = 0;
+    let velocity = 0;
     let dragging = false;
     let canDrag = false;
     let lastX = 0;
+    let lastMove = 0;
     const last = {
       shown: 0, dial: '', fills: tabs.map(() => -1), locked: null, still: '',
     };
@@ -97,12 +112,23 @@ export default function RiceVarieties() {
 
     function frame(now) {
       raf = visible ? window.requestAnimationFrame(frame) : 0;
-      const s = scrollState(section);
+
+      // Ease toward the scroll position; jump straight there on the first
+      // frame after the loop was asleep, so nothing replays from a stale spot.
+      const target = scrollProgress(section);
+      const dt = lastFrame ? Math.min(0.1, (now - lastFrame) / 1000) : 0;
+      lastFrame = raf ? now : 0;
+      if (reduced || !dt) progress = target;
+      else progress += (target - progress) * (1 - Math.exp(-dt / SCROLL_EASE));
+      if (Math.abs(target - progress) < 1e-4) progress = target;
+
+      const s = stateAt(progress);
       const photo = PHOTO_MODE && !RICE_VARIETIES[s.idx].frames;
 
-      if (!dragging && drag !== 0) {
-        drag *= 0.9;
-        if (Math.abs(drag) < 0.3) drag = 0;
+      if (!dragging && velocity !== 0) {
+        drag += velocity * dt;
+        velocity *= Math.exp(-dt / SPIN_COAST);
+        if (Math.abs(velocity) < 2) velocity = 0;
       }
 
       canDrag = !reduced && !photo && s.t === 0;
@@ -135,7 +161,8 @@ export default function RiceVarieties() {
         label = pad2(s.shown + 1);
       } else {
         let deg = reduced || s.t > 0 ? 0 : mod360(s.spin + drag);
-        if (!reduced && s.t === 0 && s.spin >= 359.5 && !dragging) deg = 360;
+        const handTurned = mod360(drag + 0.5) > 1 || dragging || velocity !== 0;
+        if (!reduced && s.t === 0 && s.spin >= 359.5 && !handTurned) deg = 360;
         fill = deg / 360;
         label = `${Math.round(deg)}°`;
       }
@@ -170,17 +197,27 @@ export default function RiceVarieties() {
     const onDown = (e) => {
       if (!canDrag) return;
       dragging = true;
+      velocity = 0;
       lastX = e.clientX;
+      lastMove = e.timeStamp;
       stage.setPointerCapture(e.pointerId);
       stage.dataset.dragging = 'true';
     };
     const onMove = (e) => {
       if (!dragging) return;
-      drag += (e.clientX - lastX) * DRAG_DEG_PER_PX;
+      const turn = (e.clientX - lastX) * DRAG_DEG_PER_PX;
+      const ms = Math.max(1, e.timeStamp - lastMove);
+      drag += turn;
+      // Degrees per second, smoothed over the last few moves.
+      velocity = velocity * 0.6 + ((turn / ms) * 1000) * 0.4;
       lastX = e.clientX;
+      lastMove = e.timeStamp;
     };
-    const onUp = () => {
+    const onUp = (e) => {
+      if (!dragging) return;
       dragging = false;
+      // Held still before letting go: no flick.
+      if (e.timeStamp - lastMove > 80) velocity = 0;
       delete stage.dataset.dragging;
     };
     stage.addEventListener('pointerdown', onDown);
