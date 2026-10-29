@@ -1681,22 +1681,7 @@ label.btn.is-disabled {
 
 /* ------------------------------------------------------------- Motion */
 
-/*
- * Reveal on scroll. Elements with .reveal start a little low and clear;
- * the useReveal hook adds .is-visible as they enter the viewport. --i
- * staggers siblings. Nothing is hidden when motion is reduced.
- */
-.reveal {
-  opacity: 0;
-  transform: translateY(18px);
-  transition: opacity 0.7s var(--ease-out), transform 0.7s var(--ease-out);
-  transition-delay: calc(var(--i, 0) * 70ms);
-}
-
-.reveal.is-visible {
-  opacity: 1;
-  transform: none;
-}
+/* Scroll reveals on the landing page come from the motion kit (src/motion). */
 
 /* Content of a freshly opened section settles in rather than snapping. */
 @keyframes rise-in {
@@ -1720,11 +1705,6 @@ label.btn.is-disabled {
     transition-duration: 0.01ms !important;
     transition-delay: 0s !important;
     scroll-behavior: auto !important;
-  }
-
-  .reveal {
-    opacity: 1;
-    transform: none;
   }
 }
 
