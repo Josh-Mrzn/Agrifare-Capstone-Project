@@ -24,8 +24,9 @@ const join = (...names) => names.filter(Boolean).join(' ');
  * instead of waiting out the stagger delay.
  */
 export default function Reveal({
-  variant = 'up', delay = 0, stagger = 0, as: Tag = 'div', className, style, children, ...rest
+  variant = 'up', delay = 0, stagger = 0, as = 'div', className, style, children, ...rest
 }) {
+  const Tag = as;
   const [ref, inView] = useInView();
   const [done, setDone] = useState(false);
   const [from, blur] = VARIANTS[variant] || VARIANTS.up;

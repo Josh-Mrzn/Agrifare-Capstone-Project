@@ -8,8 +8,9 @@ import useInView from './useInView';
  * animated words are hidden from them, so nothing is read twice or in pieces.
  */
 export default function BlurText({
-  text, delay = 0, step = 70, className, as: Tag = 'span', style, ...rest
+  text, delay = 0, step = 70, className, as = 'span', style, ...rest
 }) {
+  const Tag = as;
   const [ref, inView] = useInView();
   const words = text.split(' ');
 
