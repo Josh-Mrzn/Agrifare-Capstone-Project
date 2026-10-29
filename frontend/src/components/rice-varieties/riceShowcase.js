@@ -314,7 +314,43 @@ function shadowSprite(spriteLen, g) {
   ctx.beginPath();
   ctx.ellipse(cv.width / 2, cv.height / 2, L / 2, W / 2, 0, 0, TAU);
   ctx.fill();
-  return soften(cv, [Math.max(2, W * 0.35), 2]);
+  const out = soften(cv, [Math.max(2, W * 0.35), 2]);
+
+  // The blur reaches the sprite's edge on the large shadow; fade it out
+  // before the edge so no straight line shows where the sprite ends.
+  const octx = out.getContext('2d');
+  octx.globalCompositeOperation = 'destination-in';
+  octx.setTransform(out.width / 2, 0, 0, out.height / 2, out.width / 2, out.height / 2);
+  const mask = octx.createRadialGradient(0, 0, 0.55, 0, 0, 1);
+  mask.addColorStop(0, '#000');
+  mask.addColorStop(1, 'rgba(0,0,0,0)');
+  octx.fillStyle = mask;
+  octx.fillRect(-1, -1, 2, 2);
+  return out;
+}
+
+/**
+ * A small grain with its contact shadow under it, in one sprite.
+ *
+ * The shadow is the shadow sprite at 0.34 alpha, offset by (0.09, 0.13) of
+ * the grain's length on screen, turned into the sprite's own frame for this
+ * angle bucket. One stamp per grain instead of two halves the frame's work.
+ */
+function withContactShadow(grain, shadow, bucket, spriteLen) {
+  const ang = (bucket / BUCKETS) * TAU;
+  const ca = Math.cos(ang);
+  const sa = Math.sin(ang);
+  const dx = (0.09 * ca + 0.13 * sa) * spriteLen;
+  const dy = (-0.09 * sa + 0.13 * ca) * spriteLen;
+  const w = Math.ceil(Math.max(grain.width, shadow.width + 2 * Math.abs(dx)));
+  const h = Math.ceil(Math.max(grain.height, shadow.height + 2 * Math.abs(dy)));
+  const cv = makeCanvas(w, h);
+  const ctx = cv.getContext('2d');
+  ctx.globalAlpha = 0.34;
+  ctx.drawImage(shadow, (cv.width - shadow.width) / 2 + dx, (cv.height - shadow.height) / 2 + dy);
+  ctx.globalAlpha = 1;
+  ctx.drawImage(grain, (cv.width - grain.width) / 2, (cv.height - grain.height) / 2);
+  return cv;
 }
 
 /** The mound's solid body, so no floor shows between the grains. */
@@ -342,6 +378,37 @@ function coreSprite(pal) {
   return soften(cv, [3]);
 }
 
+/**
+ * Packs sprites into one canvas, shelf by shelf, and returns where each sits.
+ * Thousands of stamps from one image batch on the GPU; from a hundred small
+ * canvases they do not, and a frame costs several times as much.
+ */
+function packAtlas(sprites) {
+  const GAP = 2;
+  const WIDTH = 1024;
+  let x = GAP;
+  let y = GAP;
+  let rowH = 0;
+  const rects = sprites.map((s) => {
+    if (x + s.width + GAP > WIDTH) {
+      x = GAP;
+      y += rowH + GAP;
+      rowH = 0;
+    }
+    const rect = { x, y, w: s.width, h: s.height };
+    x += s.width + GAP;
+    rowH = Math.max(rowH, s.height);
+    return rect;
+  });
+  const atlas = makeCanvas(WIDTH, y + rowH + GAP);
+  const ctx = atlas.getContext('2d');
+  sprites.forEach((s, i) => {
+    ctx.drawImage(s, rects[i].x, rects[i].y);
+    rects[i].src = atlas;
+  });
+  return rects;
+}
+
 /** Every piece of one variety, as small steps that can run in idle time. */
 function buildSteps(variety, count, done) {
   const g = variety.grain;
@@ -352,11 +419,19 @@ function buildSteps(variety, count, done) {
     small: pals.map(() => []), large: [], largeBlur: [],
   };
 
-  const steps = [() => { out.layout = buildLayout(variety, count); }];
+  const steps = [() => {
+    out.layout = buildLayout(variety, count);
+    out.shadowSmall = shadowSprite(SMALL_LEN, g);
+    out.shadowLarge = shadowSprite(LARGE_LEN, g);
+    out.core = coreSprite(pals[0]);
+  }];
   pals.forEach((pal, p) => {
     LEVELS.forEach((level, l) => {
       steps.push(() => {
-        for (let b = 0; b < BUCKETS; b += 1) out.small[p][l * BUCKETS + b] = shadeGrain(SMALL_LEN, g, pal, b, level, noise);
+        for (let b = 0; b < BUCKETS; b += 1) {
+          const grain = shadeGrain(SMALL_LEN, g, pal, b, level, noise);
+          out.small[p][l * BUCKETS + b] = withContactShadow(grain, out.shadowSmall, b, SMALL_LEN);
+        }
       });
     });
   });
@@ -367,9 +442,14 @@ function buildSteps(variety, count, done) {
     });
   }
   steps.push(() => {
-    out.shadowSmall = shadowSprite(SMALL_LEN, g);
-    out.shadowLarge = shadowSprite(LARGE_LEN, g);
-    out.core = coreSprite(pals[0]);
+    const all = [...out.small.flat(), ...out.large, ...out.largeBlur, out.shadowSmall, out.shadowLarge];
+    const rects = packAtlas(all);
+    let at = 0;
+    const take = (list) => list.map(() => rects[at++]);
+    out.small = out.small.map(take);
+    out.large = take(out.large);
+    out.largeBlur = take(out.largeBlur);
+    [out.shadowSmall, out.shadowLarge] = take([0, 0]);
     done(out);
   });
   return steps;
@@ -399,11 +479,13 @@ export function createRiceShowcase(canvas, varieties) {
     return built[i];
   };
 
-  ensure(0);
-
-  // The rest are built a step at a time while the browser is idle.
+  // Everything is built a step at a time while the browser is idle, the first
+  // variety first, so the page's own entrance never waits on it; a variety
+  // the scroll reaches before then is built on the spot. While the section
+  // is animating the browser is rarely idle, so a timed-out callback still
+  // takes a short slice and the next variety is ready before it is needed.
   const idle = window.requestIdleCallback
-    ? (cb) => window.requestIdleCallback(cb)
+    ? (cb) => window.requestIdleCallback(cb, { timeout: 200 })
     : (cb) => window.setTimeout(() => cb({ timeRemaining: () => 8 }), 60);
   const cancelIdle = window.cancelIdleCallback
     ? (id) => window.cancelIdleCallback(id)
@@ -413,8 +495,9 @@ export function createRiceShowcase(canvas, varieties) {
     idleId = 0;
     const next = queues.findIndex((q, i) => !built[i] && q.length);
     if (next < 0) return;
+    const until = performance.now() + (deadline.didTimeout ? 8 : deadline.timeRemaining() - 2);
     do queues[next].shift()();
-    while (queues[next].length && deadline.timeRemaining() > 4);
+    while (queues[next].length && performance.now() < until);
     idleId = idle(work);
   };
   idleId = idle(work);
@@ -429,144 +512,144 @@ export function createRiceShowcase(canvas, varieties) {
   let ox = 0;
   let oy = 0;
 
-  function resize(cssW, cssH) {
+  // A mound at rest is drawn once into `layer` and reused while only the
+  // floating grains bob; it is drawn again when the turn changes.
+  const layer = document.createElement('canvas');
+  const lctx = layer.getContext('2d');
+  let layerKey = '';
+
+  // The art is fitted to the box (the stage); the canvas may be larger, so
+  // floating grains and the floor shadow are not cut off at the stage edge.
+  function resize(cssW, cssH, boxW = cssW, boxH = cssH) {
     const dpr = Math.min(2, window.devicePixelRatio || 1);
     canvas.width = Math.max(1, Math.round(cssW * dpr));
     canvas.height = Math.max(1, Math.round(cssH * dpr));
-    const fit = Math.min(cssW / ART_W, cssH / ART_H);
+    layer.width = canvas.width;
+    layer.height = canvas.height;
+    const fit = Math.min(boxW / ART_W, boxH / ART_H);
     k = dpr * fit;
     ox = (canvas.width - ART_W * k) / 2;
     oy = (canvas.height - ART_H * k) / 2;
-    ctx.imageSmoothingEnabled = true;
-    ctx.imageSmoothingQuality = 'high';
+    for (const c of [ctx, lctx]) {
+      c.imageSmoothingEnabled = true;
+      c.imageSmoothingQuality = 'high';
+    }
+    layerKey = '';
   }
 
-  function draw({ idx, t, th, time }) {
-    const A = ensure(idx);
-    const B = t > 0 ? ensure(idx + 1) : null;
-    const rad = (th * Math.PI) / 180;
-    const cosT = Math.cos(rad);
-    const sinT = Math.sin(rad);
-    const air = Math.sin(Math.PI * t);
+  /** Place one grain: from A alone, or on its way from A to B. */
+  function place(item, a, b, i, hero, f) {
+    const bobA = hero ? Math.sin(f.time * 1.1 + a.phase) * 6 : 0;
+    let x;
+    let y;
+    let z;
+    let dx;
+    let dy;
+    let dz;
+    let lit = -1;
+    let tumble = 0;
+    let src = a;
+    let set = f.A;
+    let size = a.size;
+    let ao = a.ao;
+    let flying = false;
 
-    ctx.setTransform(1, 0, 0, 1, 0, 0);
-    ctx.globalAlpha = 1;
-    ctx.clearRect(0, 0, canvas.width, canvas.height);
+    if (!b) {
+      ({ x, z, dx, dy, dz } = a);
+      y = a.y + bobA;
+    } else {
+      const fl = flight[i];
+      const d = hero ? 0.25 * SPREAD : (i / count) * SPREAD;
+      const u = clamp01((f.t - d) / (1 - SPREAD));
+      const e = easeInOutCubic(u);
+      const m = Math.sin(Math.PI * u);
+      const bobB = hero ? Math.sin(f.time * 1.1 + b.phase) * 6 : 0;
+      x = lerp(a.x, b.x, e);
+      y = lerp(a.y + bobA, b.y + bobB, e) + m * (90 + fl.lift * 150);
+      z = lerp(a.z, b.z, e);
+      const swirl = m * (1.1 + fl.swirl * 1.2);
+      const cs = Math.cos(swirl);
+      const sn = Math.sin(swirl);
+      const grow = 1 + 0.25 * m;
+      const xs = (x * cs - z * sn) * grow;
+      z = (x * sn + z * cs) * grow;
+      x = xs;
+      [dx, dy, dz] = norm3(lerp(a.dx, b.dx, e), lerp(a.dy, b.dy, e), lerp(a.dz, b.dz, e));
+      size = lerp(a.size, b.size, e);
+      ao = lerp(a.ao, b.ao, e);
+      if (u >= 0.5) {
+        src = b;
+        set = f.B;
+      }
+      if (u > 0 && u < 1) {
+        flying = true;
+        tumble = m * fl.tumble;
+        lit = 0.6 + 0.35 * (1 - m);
+      }
+    }
 
-    // 1. The soft shadow the mound casts on the floor.
-    ctx.setTransform(k, 0, 0, k * SP, ox + 8 * k, oy + k * BASE * (1 - SP) + 4 * k);
+    const { cosT, sinT } = f;
+    const xr = x * cosT + z * sinT;
+    const zr = -x * sinT + z * cosT;
+    item.sx = CX + xr;
+    item.sy = BASE - (y * CP - zr * SP);
+    item.depth = zr * CP + y * SP;
+    item.fx = CX + xr;
+    item.fy = BASE + zr * SP;
+    item.h = y;
+
+    const dxr = dx * cosT + dz * sinT;
+    const dzr = -dx * sinT + dz * cosT;
+    const vy = dy * CP - dzr * SP;
+    item.angle = Math.atan2(-vy, dxr) + tumble;
+    item.fore = Math.max(0.3, Math.hypot(dxr, vy));
+
+    if (lit < 0) {
+      const nxr = src.nx * cosT + src.nz * sinT;
+      const nzr = -src.nx * sinT + src.nz * cosT;
+      lit = clamp01(nxr * LIGHT_WORLD[0] + src.ny * LIGHT_WORLD[1] + nzr * LIGHT_WORLD[2]);
+    }
+
+    item.lit = lit;
+    item.ao = ao;
+    item.size = size;
+    item.jit = src.jit;
+    item.pal = src.pal;
+    item.set = set;
+    item.hero = hero;
+    item.flying = flying;
+  }
+
+  /** Steps 1 and 2: the floor shadow, then the body of the mound. */
+  function paintFloorAndCore(c, f) {
+    const air = Math.sin(Math.PI * f.t);
+    c.setTransform(k, 0, 0, k * SP, ox + 8 * k, oy + k * BASE * (1 - SP) + 4 * k);
     for (const [r, a] of [[1.32 * R, 0.18], [1.02 * R, 0.34], [0.86 * R, 0.3]]) {
       const alpha = a * (1 - air * 0.75);
-      const grad = ctx.createRadialGradient(CX, BASE, 0.2 * r, CX, BASE, r);
+      const grad = c.createRadialGradient(CX, BASE, 0.2 * r, CX, BASE, r);
       grad.addColorStop(0, `rgba(52,38,16,${alpha})`);
       grad.addColorStop(1, 'rgba(52,38,16,0)');
-      ctx.fillStyle = grad;
-      ctx.fillRect(CX - r, BASE - r, r * 2, r * 2);
+      c.fillStyle = grad;
+      c.fillRect(CX - r, BASE - r, r * 2, r * 2);
     }
 
-    // 2. The body of the mound, fading out as the grains lift and back in as they land.
+    // The core fades out as the grains lift and back in as they land.
     let coreAlpha = 1;
-    if (t > 0) coreAlpha = t < 0.5 ? 1 - smooth(clamp01(3 * t)) : smooth(clamp01((t - 0.88) / 0.12));
+    if (f.t > 0) coreAlpha = f.t < 0.5 ? 1 - smooth(clamp01(3 * f.t)) : smooth(clamp01((f.t - 0.88) / 0.12));
     if (coreAlpha > 0) {
-      ctx.setTransform(1, 0, 0, 1, 0, 0);
-      ctx.globalAlpha = coreAlpha;
-      ctx.drawImage(t < 0.5 ? A.core : B.core, ox, oy, ART_W * k, ART_H * k);
-      ctx.globalAlpha = 1;
+      c.setTransform(1, 0, 0, 1, 0, 0);
+      c.globalAlpha = coreAlpha;
+      c.drawImage(f.t < 0.5 ? f.A.core : f.B.core, ox, oy, ART_W * k, ART_H * k);
+      c.globalAlpha = 1;
     }
+  }
 
-    // Place every grain: from A alone, or on its way from A to B.
-    const place = (item, a, b, i, hero) => {
-      const bobA = hero ? Math.sin(time * 1.1 + a.phase) * 6 : 0;
-      let x;
-      let y;
-      let z;
-      let dx;
-      let dy;
-      let dz;
-      let lit = -1;
-      let tumble = 0;
-      let src = a;
-      let set = A;
-      let size = a.size;
-      let ao = a.ao;
-      let flying = false;
+  // Sprites live in an atlas; each is stamped centred on the current transform.
+  const stamp = (c, r) => c.drawImage(r.src, r.x, r.y, r.w, r.h, -r.w / 2, -r.h / 2, r.w, r.h);
 
-      if (!b) {
-        ({ x, z, dx, dy, dz } = a);
-        y = a.y + bobA;
-      } else {
-        const fl = flight[i];
-        const d = hero ? 0.25 * SPREAD : (i / count) * SPREAD;
-        const u = clamp01((t - d) / (1 - SPREAD));
-        const e = easeInOutCubic(u);
-        const m = Math.sin(Math.PI * u);
-        const bobB = hero ? Math.sin(time * 1.1 + b.phase) * 6 : 0;
-        x = lerp(a.x, b.x, e);
-        y = lerp(a.y + bobA, b.y + bobB, e) + m * (90 + fl.lift * 150);
-        z = lerp(a.z, b.z, e);
-        const swirl = m * (1.1 + fl.swirl * 1.2);
-        const cs = Math.cos(swirl);
-        const sn = Math.sin(swirl);
-        const grow = 1 + 0.25 * m;
-        const xs = (x * cs - z * sn) * grow;
-        z = (x * sn + z * cs) * grow;
-        x = xs;
-        [dx, dy, dz] = norm3(lerp(a.dx, b.dx, e), lerp(a.dy, b.dy, e), lerp(a.dz, b.dz, e));
-        size = lerp(a.size, b.size, e);
-        ao = lerp(a.ao, b.ao, e);
-        if (u >= 0.5) {
-          src = b;
-          set = B;
-        }
-        if (u > 0 && u < 1) {
-          flying = true;
-          tumble = m * fl.tumble;
-          lit = 0.6 + 0.35 * (1 - m);
-        }
-      }
-
-      const xr = x * cosT + z * sinT;
-      const zr = -x * sinT + z * cosT;
-      item.sx = CX + xr;
-      item.sy = BASE - (y * CP - zr * SP);
-      item.depth = zr * CP + y * SP;
-      item.fx = CX + xr;
-      item.fy = BASE + zr * SP;
-      item.h = y;
-
-      const dxr = dx * cosT + dz * sinT;
-      const dzr = -dx * sinT + dz * cosT;
-      const vy = dy * CP - dzr * SP;
-      item.angle = Math.atan2(-vy, dxr) + tumble;
-      item.fore = Math.max(0.3, Math.hypot(dxr, vy));
-
-      if (lit < 0) {
-        const nxr = src.nx * cosT + src.nz * sinT;
-        const nzr = -src.nx * sinT + src.nz * cosT;
-        lit = clamp01(nxr * LIGHT_WORLD[0] + src.ny * LIGHT_WORLD[1] + nzr * LIGHT_WORLD[2]);
-      }
-
-      item.lit = lit;
-      item.ao = ao;
-      item.size = size;
-      item.jit = src.jit;
-      item.pal = src.pal;
-      item.set = set;
-      item.hero = hero;
-      item.flying = flying;
-    };
-
-    const grainsA = A.layout.grains;
-    const grainsB = B ? B.layout.grains : null;
-    let n = 0;
-    for (let i = 0; i < grainsA.length; i += 1) place(items[n++], grainsA[i], grainsB && grainsB[i], i, false);
-    for (let j = 0; j < HEROES; j += 1) {
-      place(items[n++], A.layout.heroes[j], B && B.layout.heroes[j], count + j, true);
-    }
-
-    // 3. Shadows under whatever is in the air: the floating grains, and grains in flight.
-    for (let i = 0; i < n; i += 1) {
-      const it = items[i];
+  /** Step 3: shadows under whatever is in the air. */
+  function paintAirShadows(c, list) {
+    for (const it of list) {
       if (!it.hero && !(it.flying && it.h > 20)) continue;
       const shadow = it.hero ? it.set.shadowLarge : it.set.shadowSmall;
       const spriteLen = it.hero ? LARGE_LEN : SMALL_LEN;
@@ -577,18 +660,20 @@ export function createRiceShowcase(canvas, varieties) {
       const ws = (len / spriteLen) * grow;
       const ca = Math.cos(it.angle);
       const sa = Math.sin(it.angle);
-      ctx.globalAlpha = (it.hero ? 0.22 : 0.12) * (1 - 0.6 * lift);
-      ctx.setTransform(
+      c.globalAlpha = (it.hero ? 0.22 : 0.12) * (1 - 0.6 * lift);
+      c.setTransform(
         k * ca * ls, k * sa * ls * SP, -k * sa * ws, k * ca * ws * SP,
         ox + k * (it.fx + 10 + 26 * lift), oy + k * (it.fy + 6),
       );
-      ctx.drawImage(shadow, -shadow.width / 2, -shadow.height / 2);
+      stamp(c, shadow);
     }
+    c.globalAlpha = 1;
+  }
 
-    // 4. The grains, farthest first.
-    order.sort((p, q) => p.depth - q.depth);
-    for (let i = 0; i < n; i += 1) {
-      const it = order[i];
+  /** Step 4: the grains in the order given (farthest first). */
+  function paintGrains(c, list, skipHeroes) {
+    for (const it of list) {
+      if (skipHeroes && it.hero) continue;
       const len = 23 * it.size * (1 + it.depth / 800);
       const spriteLen = it.hero ? LARGE_LEN : SMALL_LEN;
       const ls = (len * it.fore) / spriteLen;
@@ -598,27 +683,74 @@ export function createRiceShowcase(canvas, varieties) {
       const turn = ((it.angle % TAU) + TAU) % TAU;
       const bucket = Math.round((turn / TAU) * BUCKETS) % BUCKETS;
       let sprite;
-
       if (it.hero) {
+        // Depth of field: the nearest and farthest floating grains are soft.
         const soft = it.depth > 0.55 * R || it.depth < -0.7 * R;
         sprite = soft ? it.set.largeBlur[bucket] : it.set.large[bucket];
       } else {
+        // Small sprites carry their contact shadow already.
         const level = Math.min(2, Math.max(0, Math.floor((0.3 + it.lit * 0.75) * it.ao * 3) + it.jit));
         sprite = it.set.small[it.pal][level * BUCKETS + bucket];
-        const shadow = it.set.shadowSmall;
-        ctx.globalAlpha = 0.34;
-        ctx.setTransform(
-          k * ca * ls, k * sa * ls, -k * sa * ws, k * ca * ws,
-          ox + k * (it.sx + 0.09 * len), oy + k * (it.sy + 0.13 * len),
-        );
-        ctx.drawImage(shadow, -shadow.width / 2, -shadow.height / 2);
-        ctx.globalAlpha = 1;
       }
+      c.setTransform(k * ca * ls, k * sa * ls, -k * sa * ws, k * ca * ws, ox + k * it.sx, oy + k * it.sy);
+      stamp(c, sprite);
+    }
+  }
 
-      ctx.setTransform(k * ca * ls, k * sa * ls, -k * sa * ws, k * ca * ws, ox + k * it.sx, oy + k * it.sy);
-      ctx.drawImage(sprite, -sprite.width / 2, -sprite.height / 2);
+  const heroItems = items.slice(count);
+
+  function draw({ idx, t, th, time }) {
+    const A = ensure(idx);
+    const B = t > 0 ? ensure(idx + 1) : null;
+    const rad = (th * Math.PI) / 180;
+    const f = {
+      A, B, t, time, cosT: Math.cos(rad), sinT: Math.sin(rad),
+    };
+    const key = t > 0 ? '' : `${idx}|${th}`;
+    const still = key !== '' && key === layerKey;
+
+    if (!still) {
+      const grainsA = A.layout.grains;
+      const grainsB = B ? B.layout.grains : null;
+      for (let i = 0; i < count; i += 1) place(items[i], grainsA[i], grainsB && grainsB[i], i, false, f);
+    }
+    for (let j = 0; j < HEROES; j += 1) {
+      place(heroItems[j], A.layout.heroes[j], B && B.layout.heroes[j], count + j, true, f);
     }
 
+    ctx.setTransform(1, 0, 0, 1, 0, 0);
+    ctx.globalAlpha = 1;
+    ctx.clearRect(0, 0, canvas.width, canvas.height);
+
+    // Changing over: everything moves, so everything is drawn in one pass.
+    if (t > 0) {
+      order.sort((p, q) => p.depth - q.depth);
+      paintFloorAndCore(ctx, f);
+      paintAirShadows(ctx, items);
+      paintGrains(ctx, order, false);
+      layerKey = '';
+      return;
+    }
+
+    // At rest: the mound comes from the layer, redrawn only when it turned.
+    // Floating grains behind the mound go under it, the rest over it.
+    if (!still) {
+      order.sort((p, q) => p.depth - q.depth);
+      lctx.setTransform(1, 0, 0, 1, 0, 0);
+      lctx.clearRect(0, 0, layer.width, layer.height);
+      paintFloorAndCore(lctx, f);
+      paintGrains(lctx, order, true);
+      layerKey = key;
+    }
+    heroItems.sort((p, q) => p.depth - q.depth);
+    const back = heroItems.filter((it) => it.depth < 0);
+    const front = heroItems.filter((it) => it.depth >= 0);
+    paintAirShadows(ctx, back);
+    paintGrains(ctx, back, false);
+    ctx.setTransform(1, 0, 0, 1, 0, 0);
+    ctx.drawImage(layer, 0, 0);
+    paintAirShadows(ctx, front);
+    paintGrains(ctx, front, false);
     ctx.setTransform(1, 0, 0, 1, 0, 0);
   }
 

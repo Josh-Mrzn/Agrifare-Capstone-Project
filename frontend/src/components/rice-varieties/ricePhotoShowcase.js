@@ -138,18 +138,22 @@ export function createRicePhotoShowcase(canvas, varieties, { onChange } = {}) {
   });
 
   let dpr = 1;
+  let boxW = 1;
+  let boxH = 1;
 
-  function resize(cssW, cssH) {
+  function resize(cssW, cssH, stageW = cssW, stageH = cssH) {
     dpr = Math.min(2, window.devicePixelRatio || 1);
     canvas.width = Math.max(1, Math.round(cssW * dpr));
     canvas.height = Math.max(1, Math.round(cssH * dpr));
+    boxW = stageW * dpr;
+    boxH = stageH * dpr;
     ctx.imageSmoothingEnabled = true;
     ctx.imageSmoothingQuality = 'high';
   }
 
-  /** Where a photo sits on the canvas, contained, with the push-in applied. */
+  /** Where a photo sits on the canvas, contained in the stage, with the push-in applied. */
   function rectFor(img, push) {
-    const fit = Math.min(canvas.width / img.w, canvas.height / img.h);
+    const fit = Math.min(boxW / img.w, boxH / img.h);
     const scale = fit * (1 + 0.06 * push);
     const w = img.w * scale;
     const h = img.h * scale;

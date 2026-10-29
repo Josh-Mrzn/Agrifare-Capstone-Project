@@ -115,11 +115,22 @@
   pointer-events: none;
 }
 
+/* The art is fitted to the stage, but the canvas reaches past it so the
+   floating grains and the floor shadow are never cut off at its edge. */
 .rs-canvas {
-  position: relative;
+  position: absolute;
+  inset: -15% -35%;
   display: block;
-  width: 100%;
-  height: 100%;
+  width: 170%;
+  height: 130%;
+  pointer-events: none;
+}
+
+/* Text stays above any grain that drifts out over it. */
+.rs-intro,
+.rs-info {
+  position: relative;
+  z-index: 1;
 }
 
 /* ── Right: the variety on show, and the tabs ── */

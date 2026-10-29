@@ -89,8 +89,9 @@ export default function RiceVarieties() {
     );
 
     const fit = () => {
+      const c = canvas.getBoundingClientRect();
       const r = stage.getBoundingClientRect();
-      show.resize(r.width, r.height);
+      show.resize(c.width, c.height, r.width, r.height);
       redraw();
     };
 
