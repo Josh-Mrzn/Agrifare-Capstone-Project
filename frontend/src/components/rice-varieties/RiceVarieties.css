@@ -119,9 +119,9 @@
    floating grains and the floor shadow are never cut off at its edge. */
 .rs-canvas {
   position: absolute;
-  inset: -15% -35%;
+  inset: -15% -50%;
   display: block;
-  width: 170%;
+  width: 200%;
   height: 130%;
   pointer-events: none;
 }

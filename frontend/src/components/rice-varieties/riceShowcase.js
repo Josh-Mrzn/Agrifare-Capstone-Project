@@ -517,6 +517,7 @@ export function createRiceShowcase(canvas, varieties) {
   const layer = document.createElement('canvas');
   const lctx = layer.getContext('2d');
   let layerKey = '';
+  let lastKey = '';
 
   // The art is fitted to the box (the stage); the canvas may be larger, so
   // floating grains and the floor shadow are not cut off at the stage edge.
@@ -537,6 +538,13 @@ export function createRiceShowcase(canvas, varieties) {
     layerKey = '';
   }
 
+  /** How strongly a grain's own normal lights it, after the turntable turn. */
+  const litOf = (g, f) => {
+    const nxr = g.nx * f.cosT + g.nz * f.sinT;
+    const nzr = -g.nx * f.sinT + g.nz * f.cosT;
+    return clamp01(nxr * LIGHT_WORLD[0] + g.ny * LIGHT_WORLD[1] + nzr * LIGHT_WORLD[2]);
+  };
+
   /** Place one grain: from A alone, or on its way from A to B. */
   function place(item, a, b, i, hero, f) {
     const bobA = hero ? Math.sin(f.time * 1.1 + a.phase) * 6 : 0;
@@ -546,17 +554,18 @@ export function createRiceShowcase(canvas, varieties) {
     let dx;
     let dy;
     let dz;
-    let lit = -1;
+    let lit;
     let tumble = 0;
-    let src = a;
-    let set = f.A;
     let size = a.size;
     let ao = a.ao;
     let flying = false;
+    // 0 shows A's look, 1 shows B's; between, B is laid over A.
+    let mix = 0;
 
     if (!b) {
       ({ x, z, dx, dy, dz } = a);
       y = a.y + bobA;
+      lit = litOf(a, f);
     } else {
       const fl = flight[i];
       const d = hero ? 0.25 * SPREAD : (i / count) * SPREAD;
@@ -574,18 +583,23 @@ export function createRiceShowcase(canvas, varieties) {
       const xs = (x * cs - z * sn) * grow;
       z = (x * sn + z * cs) * grow;
       x = xs;
-      [dx, dy, dz] = norm3(lerp(a.dx, b.dx, e), lerp(a.dy, b.dy, e), lerp(a.dz, b.dz, e));
+      dx = lerp(a.dx, b.dx, e);
+      dy = lerp(a.dy, b.dy, e);
+      dz = lerp(a.dz, b.dz, e);
+      const dl = Math.hypot(dx, dy, dz) || 1;
+      dx /= dl;
+      dy /= dl;
+      dz /= dl;
       size = lerp(a.size, b.size, e);
       ao = lerp(a.ao, b.ao, e);
-      if (u >= 0.5) {
-        src = b;
-        set = f.B;
-      }
-      if (u > 0 && u < 1) {
-        flying = true;
-        tumble = m * fl.tumble;
-        lit = 0.6 + 0.35 * (1 - m);
-      }
+      flying = u > 0 && u < 1;
+      tumble = m * fl.tumble;
+      // The colour changes over a stretch of the flight, not in one frame,
+      // and the light eases into the flight's even light and back out of it.
+      mix = smoothstep(0.35, 0.65, u);
+      const rest = u < 0.5 ? litOf(a, f) : litOf(b, f);
+      const air = smoothstep(0, 0.2, u) * (1 - smoothstep(0.8, 1, u));
+      lit = lerp(rest, 0.6 + 0.35 * (1 - m), air);
     }
 
     const { cosT, sinT } = f;
@@ -604,20 +618,21 @@ export function createRiceShowcase(canvas, varieties) {
     item.angle = Math.atan2(-vy, dxr) + tumble;
     item.fore = Math.max(0.3, Math.hypot(dxr, vy));
 
-    if (lit < 0) {
-      const nxr = src.nx * cosT + src.nz * sinT;
-      const nzr = -src.nx * sinT + src.nz * cosT;
-      lit = clamp01(nxr * LIGHT_WORLD[0] + src.ny * LIGHT_WORLD[1] + nzr * LIGHT_WORLD[2]);
-    }
-
     item.lit = lit;
     item.ao = ao;
     item.size = size;
-    item.jit = src.jit;
-    item.pal = src.pal;
-    item.set = set;
+    item.mix = mix;
+    item.set = f.A;
+    item.jit = a.jit;
+    item.pal = a.pal;
+    if (b) {
+      item.setB = f.B;
+      item.jitB = b.jit;
+      item.palB = b.pal;
+    }
     item.hero = hero;
     item.flying = flying;
+    item.even = i % 2 === 0;
   }
 
   /** Steps 1 and 2: the floor shadow, then the body of the mound. */
@@ -647,11 +662,16 @@ export function createRiceShowcase(canvas, varieties) {
   // Sprites live in an atlas; each is stamped centred on the current transform.
   const stamp = (c, r) => c.drawImage(r.src, r.x, r.y, r.w, r.h, -r.w / 2, -r.h / 2, r.w, r.h);
 
-  /** Step 3: shadows under whatever is in the air. */
+  /**
+   * Step 3: shadows under whatever is in the air. The flying grains' shadows
+   * are soft blobs that overlap, so every other one is drawn, a little
+   * darker: a softer, even cloud on the floor for half the work.
+   */
   function paintAirShadows(c, list) {
     for (const it of list) {
-      if (!it.hero && !(it.flying && it.h > 20)) continue;
-      const shadow = it.hero ? it.set.shadowLarge : it.set.shadowSmall;
+      if (!it.hero && !(it.flying && it.h > 20 && it.even)) continue;
+      const set = it.mix < 0.5 ? it.set : it.setB;
+      const shadow = it.hero ? set.shadowLarge : set.shadowSmall;
       const spriteLen = it.hero ? LARGE_LEN : SMALL_LEN;
       const lift = clamp01(it.h / 240);
       const grow = 1 + 1.6 * lift;
@@ -660,7 +680,7 @@ export function createRiceShowcase(canvas, varieties) {
       const ws = (len / spriteLen) * grow;
       const ca = Math.cos(it.angle);
       const sa = Math.sin(it.angle);
-      c.globalAlpha = (it.hero ? 0.22 : 0.12) * (1 - 0.6 * lift);
+      c.globalAlpha = (it.hero ? 0.22 : 0.16) * (1 - 0.6 * lift);
       c.setTransform(
         k * ca * ls, k * sa * ls * SP, -k * sa * ws, k * ca * ws * SP,
         ox + k * (it.fx + 10 + 26 * lift), oy + k * (it.fy + 6),
@@ -682,19 +702,24 @@ export function createRiceShowcase(canvas, varieties) {
       const sa = Math.sin(it.angle);
       const turn = ((it.angle % TAU) + TAU) % TAU;
       const bucket = Math.round((turn / TAU) * BUCKETS) % BUCKETS;
-      let sprite;
-      if (it.hero) {
-        // Depth of field: the nearest and farthest floating grains are soft.
-        const soft = it.depth > 0.55 * R || it.depth < -0.7 * R;
-        sprite = soft ? it.set.largeBlur[bucket] : it.set.large[bucket];
-      } else {
-        // Small sprites carry their contact shadow already.
-        const level = Math.min(2, Math.max(0, Math.floor((0.3 + it.lit * 0.75) * it.ao * 3) + it.jit));
-        sprite = it.set.small[it.pal][level * BUCKETS + bucket];
-      }
+      // Depth of field: the nearest and farthest floating grains are soft.
+      const soft = it.hero && (it.depth > 0.55 * R || it.depth < -0.7 * R);
+      const shade = Math.floor((0.3 + it.lit * 0.75) * it.ao * 3);
       c.setTransform(k * ca * ls, k * sa * ls, -k * sa * ws, k * ca * ws, ox + k * it.sx, oy + k * it.sy);
-      stamp(c, sprite);
+      if (it.mix < 1) stamp(c, spriteFor(it.hero, it.set, it.pal, it.jit, bucket, soft, shade));
+      if (it.mix > 0) {
+        c.globalAlpha = it.mix;
+        stamp(c, spriteFor(it.hero, it.setB, it.palB, it.jitB, bucket, soft, shade));
+        c.globalAlpha = 1;
+      }
     }
+  }
+
+  function spriteFor(hero, set, pal, jit, bucket, soft, shade) {
+    if (hero) return soft ? set.largeBlur[bucket] : set.large[bucket];
+    // Small sprites carry their contact shadow already.
+    const level = Math.min(2, Math.max(0, shade + jit));
+    return set.small[pal][level * BUCKETS + bucket];
   }
 
   const heroItems = items.slice(count);
@@ -706,8 +731,12 @@ export function createRiceShowcase(canvas, varieties) {
     const f = {
       A, B, t, time, cosT: Math.cos(rad), sinT: Math.sin(rad),
     };
+    // The layer pays off only once the mound has stopped: while it is turning
+    // or changing over, painting straight to the screen is half the work.
     const key = t > 0 ? '' : `${idx}|${th}`;
-    const still = key !== '' && key === layerKey;
+    const moving = key === '' || key !== lastKey;
+    lastKey = key;
+    const still = !moving && key === layerKey;
 
     if (!still) {
       const grainsA = A.layout.grains;
@@ -722,8 +751,8 @@ export function createRiceShowcase(canvas, varieties) {
     ctx.globalAlpha = 1;
     ctx.clearRect(0, 0, canvas.width, canvas.height);
 
-    // Changing over: everything moves, so everything is drawn in one pass.
-    if (t > 0) {
+    // Turning or changing over: everything is drawn in one pass.
+    if (moving) {
       order.sort((p, q) => p.depth - q.depth);
       paintFloorAndCore(ctx, f);
       paintAirShadows(ctx, items);
@@ -732,7 +761,7 @@ export function createRiceShowcase(canvas, varieties) {
       return;
     }
 
-    // At rest: the mound comes from the layer, redrawn only when it turned.
+    // At rest: the mound comes from the layer, drawn once when it stopped.
     // Floating grains behind the mound go under it, the rest over it.
     if (!still) {
       order.sort((p, q) => p.depth - q.depth);

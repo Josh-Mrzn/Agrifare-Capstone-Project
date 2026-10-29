@@ -25,7 +25,7 @@ const DIAL_C = 2 * Math.PI * 54;
 const DRAG_DEG_PER_PX = 0.6;
 // How quickly the shown state catches up with the scroll position (seconds).
 // A wheel moves the page in steps; easing toward it turns steps into a glide.
-const SCROLL_EASE = 0.14;
+const SCROLL_EASE = 0.22;
 // How long a flicked mound keeps coasting after it is let go (seconds).
 const SPIN_COAST = 0.5;
 
@@ -48,8 +48,10 @@ function scrollProgress(section) {
 function stateAt(p) {
   const idx = Math.min(N - 1, Math.floor(p));
   const local = p - idx;
-  const spin = smooth(clamp01((local - 0.05) / 0.65)) * 360;
-  const t = idx < N - 1 ? clamp01((local - 0.75) / 0.25) : 0;
+  // The turn takes up most of a variety's scroll and the change-over the
+  // last third, long enough for the grains' flight to read as one motion.
+  const spin = smooth(clamp01((local - 0.05) / 0.6)) * 360;
+  const t = idx < N - 1 ? clamp01((local - 0.68) / 0.32) : 0;
   return { idx, local, spin, t, shown: t > 0.5 ? idx + 1 : idx };
 }
 
