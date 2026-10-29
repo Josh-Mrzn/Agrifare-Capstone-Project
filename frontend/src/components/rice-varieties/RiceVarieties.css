@@ -1,0 +1,333 @@
+/*
+ * "Know your rice": a pinned, scroll-driven showcase of the varieties.
+ * The section is tall; its content sticks to the screen while the page
+ * scrolls through it. Uses the landing page's own pill and heading styles.
+ */
+
+.rs {
+  --rs-glow: rgba(125, 176, 110, 0.4);
+  position: relative;
+  height: calc(var(--rs-n, 5) * 85vh + 100vh);
+}
+
+.rs-pin {
+  position: sticky;
+  top: 0;
+  display: flex;
+  align-items: center;
+  height: 100svh;
+  padding-top: 80px;
+  overflow: hidden;
+}
+
+.rs-grid {
+  position: relative;
+  z-index: 1;
+  display: grid;
+  grid-template-columns: 1fr minmax(260px, 360px) 1.15fr;
+  align-items: center;
+  gap: 40px;
+  width: min(1136px, 100% - 40px);
+  margin: 0 auto;
+}
+
+/* ── Left: heading and dial ── */
+
+/* Scoped under .rs to win over the landing page's own heading sizes. */
+.rs .rs-title {
+  margin: 18px 0 16px;
+  font-size: clamp(30px, 2.9vw, 42px);
+  line-height: 1.08;
+}
+
+.rs-lede {
+  max-width: 340px;
+  color: var(--text-2);
+  font-size: 16.5px;
+  line-height: 1.7;
+}
+
+.rs-dial {
+  position: relative;
+  width: 108px;
+  height: 108px;
+  margin-top: 34px;
+}
+
+.rs-dial svg {
+  width: 100%;
+  height: 100%;
+  transform: rotate(-90deg);
+}
+
+.rs-dial circle {
+  fill: none;
+  stroke-width: 5;
+}
+
+.rs-dial-track {
+  stroke: var(--border);
+}
+
+.rs-dial-progress {
+  stroke: var(--gold);
+  stroke-linecap: round;
+}
+
+.rs-dial-label {
+  position: absolute;
+  inset: 0;
+  display: grid;
+  place-items: center;
+  color: var(--g900);
+  font-family: var(--font-display);
+  font-size: 26px;
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+}
+
+/* ── Center: the mound ── */
+
+.rs-stage {
+  position: relative;
+  height: min(64vh, 540px);
+  touch-action: pan-y;
+  cursor: grab;
+  user-select: none;
+  -webkit-user-select: none;
+}
+
+.rs-stage[data-dragging='true'] {
+  cursor: grabbing;
+}
+
+.rs-stage[data-locked='true'] {
+  cursor: default;
+}
+
+.rs-glow {
+  position: absolute;
+  inset: 6% -18% 10%;
+  border-radius: 50%;
+  color: var(--rs-glow);
+  background: radial-gradient(closest-side, currentColor, transparent);
+  transition: color 900ms;
+  pointer-events: none;
+}
+
+/* The art is fitted to the stage, but the canvas reaches past it so the
+   floating grains and the floor shadow are never cut off at its edge. */
+.rs-canvas {
+  position: absolute;
+  inset: -15% -50%;
+  display: block;
+  width: 200%;
+  height: 130%;
+  pointer-events: none;
+}
+
+/* Text stays above any grain that drifts out over it. */
+.rs-intro,
+.rs-info {
+  position: relative;
+  z-index: 1;
+}
+
+/* ── Right: the variety on show, and the tabs ── */
+
+.rs-panels {
+  display: grid;
+}
+
+.rs-panel {
+  grid-area: 1 / 1;
+}
+
+.rs-panel > * {
+  transition: opacity 600ms var(--af-ease), transform 600ms var(--af-ease), filter 600ms var(--af-ease);
+  transition-delay: calc(var(--i, 0) * 60ms + 120ms);
+}
+
+.rs-panel[data-state='before'] > *,
+.rs-panel[data-state='after'] > * {
+  opacity: 0;
+  filter: blur(6px);
+  transition-delay: 0ms;
+}
+
+.rs-panel[data-state='before'] > * {
+  transform: translateY(-16px);
+}
+
+.rs-panel[data-state='after'] > * {
+  transform: translateY(16px);
+}
+
+.rs-panel:not([data-state='active']) {
+  pointer-events: none;
+}
+
+.rs-eyebrow {
+  color: var(--g700);
+  font-size: 12.5px;
+  font-weight: 700;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+}
+
+.rs-panel h3 {
+  margin-top: 10px;
+  color: var(--g900);
+  font-size: 30px;
+  line-height: 1.15;
+  letter-spacing: -0.02em;
+}
+
+.rs-desc {
+  margin-top: 12px;
+  color: var(--text-2);
+  font-size: 16px;
+  line-height: 1.7;
+}
+
+.rs-traits {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-top: 18px;
+  list-style: none;
+}
+
+.rs-traits li {
+  padding: 6px 12px;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.7);
+  color: var(--text);
+  font-size: 13.5px;
+  font-weight: 500;
+}
+
+.rs-sold {
+  margin-top: 14px;
+  color: var(--text-2);
+  font-size: 14px;
+}
+
+.rs-tabs {
+  display: grid;
+  grid-template-columns: repeat(var(--rs-n, 5), auto);
+  align-items: start;
+  gap: 10px;
+  margin-top: 34px;
+  overflow-x: auto;
+  scrollbar-width: none;
+}
+
+.rs-tabs::-webkit-scrollbar {
+  display: none;
+}
+
+.rs-tab {
+  display: block;
+  padding: 0 0 4px;
+  color: var(--text-2);
+  font-size: 10.5px;
+  font-weight: 700;
+  letter-spacing: 0.05em;
+  text-align: left;
+  text-transform: uppercase;
+  white-space: nowrap;
+  cursor: pointer;
+}
+
+.rs-tab[aria-selected='true'] {
+  color: var(--g700);
+}
+
+.rs-tab-bar {
+  display: block;
+  height: 3px;
+  margin-bottom: 8px;
+  overflow: hidden;
+  border-radius: 3px;
+  background: var(--border);
+}
+
+.rs-tab-fill {
+  display: block;
+  height: 100%;
+  background: var(--g700);
+  transform: scaleX(var(--fill, 0));
+  transform-origin: left;
+}
+
+/* ── Photo mode: the canvas multiplies onto the cream, like a print. ── */
+
+.rs--photo .rs-pin {
+  background: var(--bg);
+}
+
+.rs--photo .rs-grid {
+  z-index: auto;
+}
+
+.rs--photo .rs-glow {
+  opacity: 0.55;
+}
+
+.rs--photo .rs-canvas {
+  mix-blend-mode: multiply;
+}
+
+/* ── Phones and small tablets ── */
+
+@media (max-width: 920px) {
+  .rs-grid {
+    grid-template-columns: 1fr;
+    gap: 10px;
+  }
+
+  .rs .rs-badge,
+  .rs-lede,
+  .rs-dial {
+    display: none;
+  }
+
+  .rs .rs-title {
+    margin: 0;
+    font-size: 30px;
+  }
+
+  .rs-stage {
+    height: 34svh;
+  }
+
+  .rs-panel h3 {
+    font-size: 24px;
+  }
+
+  .rs-desc {
+    font-size: 15px;
+  }
+
+  .rs-sold {
+    display: none;
+  }
+
+  .rs-tabs {
+    margin-top: 16px;
+  }
+}
+
+@media (max-width: 920px) and (max-height: 700px) {
+  .rs-traits {
+    display: none;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .rs-stage {
+    cursor: default;
+  }
+}

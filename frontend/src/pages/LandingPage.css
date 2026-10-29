@@ -11,12 +11,14 @@
   overflow-x: clip;
 }
 
-.lp-top-sentinel {
-  position: absolute;
-  top: 0;
-  left: 0;
-  width: 1px;
-  height: 60px;
+/* Anchor jumps stop just under the 80px header. The section's own margin
+   does the work here, so the app-wide scroll padding is set aside. */
+html:has(.lp) {
+  scroll-padding-top: 0;
+}
+
+.lp section[id] {
+  scroll-margin-top: calc(80px + 20px);
 }
 
 .lp-wrap {
@@ -52,7 +54,8 @@
   transform: translateY(-2px);
 }
 
-.lp-pill:hover svg {
+/* Direct icons only: a wrapped → (.af-arrow) is nudged by the motion kit. */
+.lp-pill:hover > svg {
   transform: translateX(3px);
 }
 
@@ -380,6 +383,16 @@
   font-weight: 600;
 }
 
+/* The accent comes in word by word. background-clip: text skips children
+   that are blurred or moved, so each word carries the gradient itself. */
+.lp-hero-accent .af-word {
+  padding: 0 0.06em 0.08em;
+  margin: 0 -0.06em;
+  background: linear-gradient(120deg, var(--g700), var(--g500));
+  -webkit-background-clip: text;
+  background-clip: text;
+}
+
 .lp-hero-sub {
   max-width: 32rem;
   color: var(--text-2);
@@ -399,17 +412,37 @@
   place-items: center;
 }
 
+/* Holds the stalk and its floor shadow, so the scroll drift below and the
+   idle float on the image each have an element of their own. */
+.lp-hero-stalk {
+  position: relative;
+  display: grid;
+  place-items: center;
+  width: 100%;
+}
+
 .lp-hero-visual img {
+  position: relative;
   width: min(100%, 520px);
   height: auto;
   filter: drop-shadow(0 30px 40px rgba(18, 33, 18, 0.18));
+}
+
+.lp-hero-shadow {
+  position: absolute;
+  left: 30%;
+  right: 28%;
+  bottom: 1%;
+  height: 6%;
+  border-radius: 50%;
+  background: radial-gradient(closest-side, rgba(18, 33, 18, 0.2), transparent);
 }
 
 /* As the page scrolls past the hero, the stalk drifts down and tilts a
    little: depth, without parallax layers. Browsers without scroll-driven
    animations simply leave it still. */
 @supports (animation-timeline: scroll()) {
-  .lp-hero-visual img {
+  .lp-hero-stalk {
     animation: stalk-drift linear both;
     animation-timeline: scroll(root);
     animation-range: 0 90vh;
@@ -420,12 +453,6 @@
   to {
     transform: translateY(70px) rotate(3deg) scale(0.96);
   }
-}
-
-/* The hero's entrance: badge, headline, text, buttons, one after another. */
-.lp-enter {
-  animation: hero-in 0.9s var(--ease-out) both;
-  animation-delay: calc(var(--d, 0) * 110ms + 80ms);
 }
 
 /* The facts under the hero: what holds for every order. */
@@ -546,10 +573,7 @@
   border-radius: 24px;
   background: rgba(255, 255, 255, 0.55);
   box-shadow: var(--sh-sm);
-  transition: opacity 0.7s var(--ease-out), transform 0.7s var(--ease-out),
-    translate 0.35s var(--ease-out), box-shadow 0.35s ease, background 0.35s ease;
-  /* The reveal is staggered; the hover answers at once. */
-  transition-delay: calc(var(--i, 0) * 70ms), calc(var(--i, 0) * 70ms), 0s, 0s, 0s;
+  transition: translate 0.35s var(--ease-out), box-shadow 0.35s ease, background 0.35s ease;
 }
 
 .lp-feature::before {
@@ -653,9 +677,7 @@
   border-radius: 24px;
   background: rgba(255, 255, 255, 0.62);
   box-shadow: var(--sh-md);
-  transition: opacity 0.7s var(--ease-out), transform 0.7s var(--ease-out),
-    translate 0.35s var(--ease-out), box-shadow 0.35s ease;
-  transition-delay: calc(var(--i, 0) * 70ms), calc(var(--i, 0) * 70ms), 0s, 0s;
+  transition: translate 0.35s var(--ease-out), box-shadow 0.35s ease;
 }
 
 .lp-about-card:hover {
@@ -778,9 +800,8 @@
   padding-bottom: 0;
 }
 
-/* The gold line that joins the steps. */
-.lp-rail-item:not(:last-child)::after {
-  content: '';
+/* The gold line that joins the steps, drawn down as the steps come in. */
+.lp-rail-line {
   position: absolute;
   left: 25px;
   top: 58px;
@@ -864,7 +885,7 @@
   color: var(--g900);
 }
 
-.lp-download-title span {
+.lp-download-title .lp-download-accent {
   display: block;
   font-style: italic;
   font-weight: 500;
@@ -1319,7 +1340,7 @@
 }
 
 @media (prefers-reduced-motion: reduce) {
-  .lp-hero-visual img,
+  .lp-hero-stalk,
   .lp-download-visual img,
   .lp-glow {
     animation: none !important;

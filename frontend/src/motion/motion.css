@@ -1,0 +1,161 @@
+/*
+ * Motion kit: scroll reveals, word-by-word headings, a perspective tilt,
+ * floating art and button feedback.
+ *
+ * Every "hidden before it is revealed" state sits under .af-motion, a class
+ * main.jsx puts on <html> before the first render. If the script never runs,
+ * nothing is hidden. With reduced motion, nothing moves at all.
+ */
+
+:root {
+  --af-ease: cubic-bezier(0.22, 1, 0.36, 1);
+  --af-dur: 900ms;
+  --af-blur: 8px;
+}
+
+html {
+  scroll-behavior: smooth;
+}
+
+/* ── Reveal ── */
+
+.af-motion .af-reveal:not(.af-stagger)[data-inview='false'],
+.af-motion .af-stagger[data-inview='false'] > .af-item {
+  opacity: 0;
+  filter: blur(var(--af-b, var(--af-blur)));
+  transform: var(--af-t, none);
+}
+
+/* The entrance transition applies only until Reveal marks itself done. */
+.af-motion .af-reveal:not(.af-stagger)[data-inview='true']:not([data-af-done]),
+.af-motion .af-stagger[data-inview='true']:not([data-af-done]) > .af-item {
+  transition: opacity var(--af-dur) var(--af-ease), filter var(--af-dur) var(--af-ease),
+    transform var(--af-dur) var(--af-ease);
+  transition-delay: calc(var(--af-delay, 0ms) + var(--i, 0) * var(--af-stagger, 0ms));
+}
+
+/* ── BlurText ── */
+
+.af-word {
+  display: inline-block;
+}
+
+.af-motion .af-blur .af-word {
+  transition: opacity 800ms var(--af-ease), filter 800ms var(--af-ease), transform 800ms var(--af-ease);
+  transition-delay: calc(var(--af-delay, 0ms) + var(--i, 0) * var(--af-step, 70ms));
+}
+
+.af-motion .af-blur[data-inview='false'] .af-word {
+  opacity: 0;
+  filter: blur(10px);
+  transform: translateY(0.28em);
+}
+
+/* ── Connector lines: drawn downward once the list around them is in. ── */
+
+.af-motion .af-line {
+  transform-origin: top;
+  transition: transform 600ms var(--af-ease);
+  transition-delay: calc(var(--af-delay, 0ms) + var(--i, 0) * var(--af-stagger, 0ms) + 350ms);
+}
+
+.af-motion [data-inview='false'] .af-line {
+  transform: scaleY(0);
+}
+
+/* ── ScrollTilt ── */
+
+.af-tilt {
+  perspective: 1400px;
+}
+
+.af-tilt-inner {
+  transform-origin: 50% 100%;
+}
+
+/* ── Floating art and its shadow ── */
+
+.af-float {
+  animation: af-float 7s ease-in-out infinite;
+}
+
+.af-float-shadow {
+  animation: af-float-shadow 7s ease-in-out infinite;
+}
+
+@keyframes af-float {
+  50% {
+    transform: translateY(-10px) rotate(-1deg);
+  }
+}
+
+@keyframes af-float-shadow {
+  50% {
+    transform: scaleX(0.88);
+    opacity: 0.7;
+  }
+}
+
+/* ── Navigation ── */
+
+.af-motion .af-nav-enter {
+  animation: af-nav-in 700ms var(--af-ease) backwards;
+}
+
+@keyframes af-nav-in {
+  from {
+    opacity: 0;
+    transform: translateY(-14px);
+    filter: blur(6px);
+  }
+}
+
+.af-motion .af-nav[data-scrolled='true'] {
+  backdrop-filter: saturate(1.4) blur(12px);
+  -webkit-backdrop-filter: saturate(1.4) blur(12px);
+  box-shadow: 0 1px 0 rgba(22, 38, 26, 0.08), 0 8px 24px -16px rgba(22, 38, 26, 0.25);
+}
+
+/* ── Buttons ── */
+
+.af-motion .af-press:active {
+  transform: scale(0.97);
+  transition: transform 180ms var(--af-ease);
+}
+
+.af-arrow {
+  display: inline-flex;
+  transition: transform 250ms var(--af-ease);
+}
+
+.af-press:hover .af-arrow,
+.af-press:focus-visible .af-arrow {
+  transform: translateX(3px);
+}
+
+/* ── Reduced motion: everything shown, nothing moving. ── */
+
+@media (prefers-reduced-motion: reduce) {
+  html {
+    scroll-behavior: auto;
+  }
+
+  .af-motion .af-reveal,
+  .af-motion .af-item,
+  .af-motion .af-word,
+  .af-motion .af-line {
+    opacity: 1 !important;
+    filter: none !important;
+    transform: none !important;
+    transition: none !important;
+  }
+
+  .af-float,
+  .af-float-shadow,
+  .af-motion .af-nav-enter,
+  .af-tilt-inner {
+    animation: none !important;
+    transform: none !important;
+    opacity: 1 !important;
+  }
+}

@@ -1,4 +1,7 @@
 import React, { useEffect, useRef, useState } from 'react';
+import BlurText from '../../motion/BlurText';
+import Reveal from '../../motion/Reveal';
+import ScrollTilt from '../../motion/ScrollTilt';
 
 /**
  * The one-minute AgriFair short, laid out like the storyboard it was drawn
@@ -109,21 +112,22 @@ export default function HighlightsSection() {
   return (
     <section className="lp-section lp-hl" id="story" aria-labelledby="lp-hl-title">
       <div className="lp-wrap">
-        <header className="lp-hl-head reveal">
-          <span className="lp-section-badge">Our story</span>
+        <header className="lp-hl-head">
+          <Reveal as="span" variant="fade" className="lp-section-badge">Our story</Reveal>
           <h2 id="lp-hl-title" className="lp-section-title">
-            A <em>fairer</em> way to sell the harvest
+            <BlurText text="A" />
+            {' '}
+            <em><BlurText text="fairer" delay={70} /></em>
+            {' '}
+            <BlurText text="way to sell the harvest" delay={140} />
           </h2>
-          <p className="lp-section-sub">
+          <Reveal as="p" delay={450} className="lp-section-sub">
             Two rice farmers, a middleman&rsquo;s truck, and the app that let them sell on their
             own terms. The idea behind AgriFair, in a {formatTime(duration)} animated short.
-          </p>
+          </Reveal>
         </header>
 
-        {/* The fade-in sits on its own wrapper: useReveal marks it visible by
-            adding a class directly, and React re-rendering this element's
-            className on play would wipe that class and hide the player. */}
-        <div className="reveal">
+        <ScrollTilt>
         <div className={`lp-hl-stage${started && !ended ? ' is-playing' : ''}`}>
           <video
             ref={videoRef}
@@ -163,9 +167,9 @@ export default function HighlightsSection() {
             </button>
           )}
         </div>
-        </div>
+        </ScrollTilt>
 
-        <ol className="lp-hl-chapters reveal" aria-label="Scenes" style={{ '--i': 1 }}>
+        <Reveal as="ol" stagger={100} className="lp-hl-chapters" aria-label="Scenes">
           {CHAPTERS.map((chapter, i) => {
             const active = i === activeIndex && !ended;
             return (
@@ -191,7 +195,7 @@ export default function HighlightsSection() {
               </li>
             );
           })}
-        </ol>
+        </Reveal>
       </div>
     </section>
   );
