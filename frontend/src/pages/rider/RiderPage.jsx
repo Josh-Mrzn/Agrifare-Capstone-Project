@@ -2,6 +2,7 @@ import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { Camera, Navigation, LogOut, Phone, RefreshCw } from 'lucide-react';
 import logoImg from '../../assets/logo.png';
+import ThemeToggle from '../../theme/ThemeToggle';
 import { peso, quantityLabel } from '../../utils/format';
 import {
   fetchMyDeliveries,
@@ -182,6 +183,7 @@ export default function RiderPage() {
             <span>AgriFair delivery</span>
           </div>
         </div>
+        <ThemeToggle className="btn btn-ghost btn-icon" />
         <button type="button" className="btn btn-ghost btn-icon" onClick={load} aria-label="Refresh deliveries">
           <RefreshCw size={18} aria-hidden="true" />
         </button>

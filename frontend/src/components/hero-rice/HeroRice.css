@@ -8,6 +8,9 @@
   position: relative;
   transform-origin: 48% 92%;
   will-change: opacity, transform;
+  /* Never tinted by a text selection that runs across the hero. */
+  user-select: none;
+  -webkit-user-select: none;
 }
 
 /* A warm glow behind the mound; the loop fades it in and out. */

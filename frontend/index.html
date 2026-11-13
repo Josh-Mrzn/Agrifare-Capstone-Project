@@ -12,6 +12,14 @@
       content="AgriFair connects Filipino rice farmers and traders directly with buyers. Clear prices per sack, GCash or cash on delivery, and tracked delivery."
     />
     <title>AgriFair: rice straight from the farm</title>
+    <!-- The theme, before the first paint (src/theme/theme.js keeps it up to date). -->
+    <script>
+      try {
+        var t = localStorage.getItem('agrifair-theme');
+        document.documentElement.dataset.theme = t === 'dark' || t === 'light'
+          ? t : matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light';
+      } catch (e) { /* theme.js sets it */ }
+    </script>
   </head>
   <body>
     <div id="root"></div>

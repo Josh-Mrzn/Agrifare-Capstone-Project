@@ -81,26 +81,26 @@ html:has(.lp) {
 }
 
 .lp-pill-glass {
-  background: rgba(255, 255, 255, 0.55);
-  border-color: rgba(255, 255, 255, 0.75);
-  color: var(--g900);
+  background: rgba(var(--glass), 0.55);
+  border-color: rgba(var(--glass-line), 0.75);
+  color: var(--heading);
   backdrop-filter: blur(16px);
   -webkit-backdrop-filter: blur(16px);
   box-shadow: var(--sh-sm);
 }
 
 .lp-pill-glass:hover {
-  background: rgba(255, 255, 255, 0.8);
+  background: rgba(var(--glass), 0.8);
 }
 
 .lp-pill-outline {
-  border-color: rgba(18, 33, 18, 0.18);
-  color: var(--g900);
+  border-color: rgba(var(--ink), 0.18);
+  color: var(--heading);
 }
 
 .lp-pill-outline:hover {
   border-color: var(--g700);
-  background: rgba(18, 33, 18, 0.04);
+  background: rgba(var(--ink), 0.04);
 }
 
 .lp-pill-white {
@@ -124,9 +124,9 @@ html:has(.lp) {
 }
 
 .lp-pill-light {
-  background: #fff;
+  background: var(--white);
   border-color: var(--border-strong);
-  color: var(--g900);
+  color: var(--heading);
 }
 
 /* ── Navigation ── */
@@ -143,10 +143,10 @@ html:has(.lp) {
 
 .lp-nav.is-scrolled,
 .lp-nav.is-open {
-  background: rgba(244, 240, 230, 0.85);
+  background: rgba(var(--bg-rgb), 0.85);
   backdrop-filter: blur(18px) saturate(1.4);
   -webkit-backdrop-filter: blur(18px) saturate(1.4);
-  border-bottom-color: rgba(18, 33, 18, 0.07);
+  border-bottom-color: rgba(var(--ink), 0.07);
   box-shadow: 0 8px 24px rgba(18, 33, 18, 0.06);
 }
 
@@ -169,7 +169,7 @@ html:has(.lp) {
   display: inline-flex;
   align-items: center;
   gap: 11px;
-  color: var(--g900);
+  color: var(--heading);
   font-family: var(--font-display);
   font-size: 1.4rem;
   font-weight: 700;
@@ -210,7 +210,7 @@ html:has(.lp) {
 }
 
 .lp-nav-links a:hover {
-  color: var(--g900);
+  color: var(--heading);
 }
 
 .lp-nav-links a:hover::after {
@@ -228,7 +228,23 @@ html:has(.lp) {
   height: 44px;
   margin-left: auto;
   border-radius: 12px;
-  color: var(--g900);
+  color: var(--heading);
+}
+
+.lp-theme {
+  display: grid;
+  place-items: center;
+  flex: none;
+  width: 44px;
+  height: 44px;
+  margin: 0 -12px;
+  border-radius: 12px;
+  color: var(--heading);
+  transition: background 0.2s ease;
+}
+
+.lp-theme:hover {
+  background: rgba(var(--ink), 0.06);
 }
 
 .lp-sheet {
@@ -242,11 +258,11 @@ html:has(.lp) {
   justify-content: space-between;
   align-items: center;
   padding: 14px 6px;
-  border-bottom: 1px solid rgba(18, 33, 18, 0.08);
+  border-bottom: 1px solid rgba(var(--ink), 0.08);
   font-family: var(--font-display);
   font-size: 1.15rem;
   font-weight: 650;
-  color: var(--g900);
+  color: var(--heading);
 }
 
 .lp-sheet-actions {
@@ -342,13 +358,13 @@ html:has(.lp) {
   align-items: center;
   gap: 9px;
   padding: 7px 16px;
-  border: 1px solid rgba(255, 255, 255, 0.75);
+  border: 1px solid rgba(var(--glass-line), 0.75);
   border-radius: 999px;
-  background: rgba(255, 255, 255, 0.5);
+  background: rgba(var(--glass), 0.5);
   backdrop-filter: blur(16px);
   -webkit-backdrop-filter: blur(16px);
   box-shadow: var(--sh-sm);
-  color: var(--g800);
+  color: var(--heading);
   font-size: 0.8rem;
   font-weight: 650;
   letter-spacing: 0.06em;
@@ -369,13 +385,13 @@ html:has(.lp) {
   font-weight: 700;
   line-height: 1.04;
   letter-spacing: -0.035em;
-  color: var(--g900);
+  color: var(--heading);
 }
 
 .lp-hero-accent {
   display: block;
   padding-bottom: 0.08em;
-  background: linear-gradient(120deg, var(--g700), var(--g500));
+  background: linear-gradient(120deg, var(--accent-text), var(--g500));
   -webkit-background-clip: text;
   background-clip: text;
   color: transparent;
@@ -388,7 +404,7 @@ html:has(.lp) {
 .lp-hero-accent .af-word {
   padding: 0 0.06em 0.08em;
   margin: 0 -0.06em;
-  background: linear-gradient(120deg, var(--g700), var(--g500));
+  background: linear-gradient(120deg, var(--accent-text), var(--g500));
   -webkit-background-clip: text;
   background-clip: text;
 }
@@ -469,9 +485,9 @@ html:has(.lp) {
   list-style: none;
   width: min(1136px, calc(100% - 64px));
   padding: 0;
-  border: 1px solid rgba(255, 255, 255, 0.75);
+  border: 1px solid rgba(var(--glass-line), 0.75);
   border-radius: 24px;
-  background: rgba(255, 255, 255, 0.5);
+  background: rgba(var(--glass), 0.5);
   backdrop-filter: blur(20px);
   -webkit-backdrop-filter: blur(20px);
   box-shadow: var(--sh-md);
@@ -485,7 +501,7 @@ html:has(.lp) {
 }
 
 .lp-facts li + li {
-  border-left: 1px solid rgba(18, 33, 18, 0.07);
+  border-left: 1px solid rgba(var(--ink), 0.07);
 }
 
 .lp-facts-icon {
@@ -495,20 +511,20 @@ html:has(.lp) {
   width: 44px;
   height: 44px;
   border-radius: 14px;
-  background: rgba(45, 90, 45, 0.1);
-  color: var(--g700);
+  background: rgba(var(--accent-rgb), 0.1);
+  color: var(--accent-text);
 }
 
 .lp-facts li:nth-child(even) .lp-facts-icon {
   background: rgba(201, 168, 76, 0.2);
-  color: #7a5f18;
+  color: var(--warning-fg);
 }
 
 .lp-facts strong {
   display: block;
   font-family: var(--font-display);
   font-size: 1.05rem;
-  color: var(--g900);
+  color: var(--heading);
 }
 
 .lp-facts small {
@@ -533,10 +549,10 @@ html:has(.lp) {
   display: inline-block;
   margin-bottom: 16px;
   padding: 6px 16px;
-  border: 1px solid rgba(255, 255, 255, 0.75);
+  border: 1px solid rgba(var(--glass-line), 0.75);
   border-radius: 999px;
-  background: rgba(255, 255, 255, 0.5);
-  color: var(--g800);
+  background: rgba(var(--glass), 0.5);
+  color: var(--heading);
   font-size: 0.78rem;
   font-weight: 700;
   letter-spacing: 0.1em;
@@ -547,12 +563,12 @@ html:has(.lp) {
   font-size: clamp(2.2rem, 4vw, 3.1rem);
   line-height: 1.12;
   letter-spacing: -0.03em;
-  color: var(--g900);
+  color: var(--heading);
 }
 
 .lp-section-title em {
   font-weight: 600;
-  color: var(--g700);
+  color: var(--accent-text);
 }
 
 .lp-section-sub {
@@ -575,9 +591,9 @@ html:has(.lp) {
   position: relative;
   overflow: hidden;
   padding: 34px 30px;
-  border: 1px solid rgba(255, 255, 255, 0.8);
+  border: 1px solid rgba(var(--glass-line), 0.8);
   border-radius: 24px;
-  background: rgba(255, 255, 255, 0.55);
+  background: rgba(var(--glass), 0.55);
   box-shadow: var(--sh-sm);
   transition: translate 0.35s var(--ease-out), box-shadow 0.35s ease, background 0.35s ease;
 }
@@ -597,7 +613,7 @@ html:has(.lp) {
 
 .lp-feature:hover {
   translate: 0 -6px;
-  background: rgba(255, 255, 255, 0.85);
+  background: rgba(var(--glass), 0.85);
   box-shadow: var(--sh-md);
 }
 
@@ -612,9 +628,9 @@ html:has(.lp) {
   height: 58px;
   margin-bottom: 22px;
   border-radius: 16px;
-  background: #fff;
+  background: var(--white);
   box-shadow: var(--sh-sm);
-  color: var(--g700);
+  color: var(--accent-text);
   transition: transform 0.35s var(--ease-out);
 }
 
@@ -624,7 +640,7 @@ html:has(.lp) {
 
 .lp-feature h3 {
   font-size: 1.3rem;
-  color: var(--g900);
+  color: var(--heading);
 }
 
 .lp-feature p {
@@ -679,9 +695,9 @@ html:has(.lp) {
   overflow: hidden;
   max-width: 380px;
   padding: 30px;
-  border: 1px solid rgba(255, 255, 255, 0.8);
+  border: 1px solid rgba(var(--glass-line), 0.8);
   border-radius: 24px;
-  background: rgba(255, 255, 255, 0.62);
+  background: rgba(var(--glass), 0.62);
   box-shadow: var(--sh-md);
   transition: translate 0.35s var(--ease-out), box-shadow 0.35s ease;
 }
@@ -726,7 +742,7 @@ html:has(.lp) {
 .lp-about-card h3 {
   position: relative;
   font-size: 1.25rem;
-  color: var(--g900);
+  color: var(--heading);
 }
 
 .lp-about-card p {
@@ -876,7 +892,7 @@ html:has(.lp) {
 }
 
 .lp-download-kicker {
-  color: var(--g700);
+  color: var(--accent-text);
   font-size: 0.78rem;
   font-weight: 700;
   letter-spacing: 0.14em;
@@ -888,14 +904,14 @@ html:has(.lp) {
   font-size: clamp(2.3rem, 4.5vw, 3.3rem);
   line-height: 1.05;
   letter-spacing: -0.035em;
-  color: var(--g900);
+  color: var(--heading);
 }
 
 .lp-download-title .lp-download-accent {
   display: block;
   font-style: italic;
   font-weight: 500;
-  color: var(--g700);
+  color: var(--accent-text);
 }
 
 .lp-download-sub {
@@ -939,13 +955,13 @@ html:has(.lp) {
   align-items: center;
   gap: 7px;
   padding: 4px 2px;
-  color: var(--g700);
+  color: var(--accent-text);
   font-size: 0.9rem;
   font-weight: 650;
 }
 
 .lp-copy:hover {
-  color: var(--g900);
+  color: var(--heading);
 }
 
 /* ── Highlights (the animated short) ── */
@@ -1032,9 +1048,9 @@ html:has(.lp) {
   width: 100%;
   padding: 10px 10px 14px;
   overflow: hidden;
-  border: 1px solid rgba(255, 255, 255, 0.8);
+  border: 1px solid rgba(var(--glass-line), 0.8);
   border-radius: 18px;
-  background: rgba(255, 255, 255, 0.55);
+  background: rgba(var(--glass), 0.55);
   text-align: left;
   color: var(--text);
   transition: translate 0.3s var(--ease-out), box-shadow 0.3s ease, background 0.3s ease;
@@ -1043,7 +1059,7 @@ html:has(.lp) {
 .lp-hl-chapter:hover,
 .lp-hl-chapter.is-active {
   translate: 0 -3px;
-  background: rgba(255, 255, 255, 0.85);
+  background: rgba(var(--glass), 0.85);
   box-shadow: var(--sh-md);
 }
 
@@ -1070,7 +1086,7 @@ html:has(.lp) {
 .lp-hl-chapter-copy strong {
   font-family: var(--font-display);
   font-size: 1.02rem;
-  color: var(--g900);
+  color: var(--heading);
 }
 
 .lp-hl-chapter-copy span:last-child {
@@ -1153,8 +1169,8 @@ html:has(.lp) {
 
 .lp-footer {
   padding: 40px 0 32px;
-  border-top: 1px solid rgba(18, 33, 18, 0.08);
-  background: #ece6d6;
+  border-top: 1px solid rgba(var(--ink), 0.08);
+  background: var(--surface-3);
 }
 
 .lp-footer-top {
@@ -1164,7 +1180,7 @@ html:has(.lp) {
   flex-wrap: wrap;
   gap: 16px;
   padding-bottom: 24px;
-  border-bottom: 1px solid rgba(18, 33, 18, 0.08);
+  border-bottom: 1px solid rgba(var(--ink), 0.08);
 }
 
 .lp-footer-top p {
@@ -1189,7 +1205,7 @@ html:has(.lp) {
 }
 
 .lp-footer-bottom a:hover {
-  color: var(--g900);
+  color: var(--heading);
 }
 
 /* ── Responsive ── */
@@ -1213,6 +1229,11 @@ html:has(.lp) {
 
   .lp-nav-toggle {
     display: grid;
+    margin-left: 0;
+  }
+
+  .lp-theme {
+    margin: 0 -20px 0 auto;
   }
 
   .lp-hero {
@@ -1241,7 +1262,7 @@ html:has(.lp) {
   }
 
   .lp-facts li:nth-child(n + 3) {
-    border-top: 1px solid rgba(18, 33, 18, 0.07);
+    border-top: 1px solid rgba(var(--ink), 0.07);
   }
 
   .lp-features {
@@ -1292,7 +1313,7 @@ html:has(.lp) {
 
   .lp-facts li + li {
     border-left: 0;
-    border-top: 1px solid rgba(18, 33, 18, 0.07);
+    border-top: 1px solid rgba(var(--ink), 0.07);
   }
 
   .lp-facts li {
@@ -1351,4 +1372,31 @@ html:has(.lp) {
   .lp-glow {
     animation: none !important;
   }
+}
+
+/* ── Dark theme: what the tokens alone do not cover ── */
+
+/* The forest pill would sink into the dark page. */
+[data-theme='dark'] .lp-pill-dark {
+  background: var(--g700);
+  box-shadow: 0 10px 24px rgba(0, 0, 0, 0.35);
+}
+
+[data-theme='dark'] .lp-pill-dark:hover {
+  background: #37703a;
+  box-shadow: 0 16px 32px rgba(0, 0, 0, 0.45);
+}
+
+/* rice-stalk.webp carries its own pale floor shadow, drawn for the cream
+   page. On the dark one it shows as a light patch, so it is cut off. */
+[data-theme='dark'] .lp-hero-art img {
+  clip-path: inset(0 0 6% 0);
+}
+
+[data-theme='dark'] .lp-glow {
+  opacity: 0.16;
+}
+
+[data-theme='dark'] .lp-glow-gold {
+  opacity: 0.12;
 }

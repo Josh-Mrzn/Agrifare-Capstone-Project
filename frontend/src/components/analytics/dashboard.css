@@ -45,3 +45,6 @@
 .ad-app { display: flex; flex-wrap: wrap; justify-content: space-between; align-items: center; gap: 8px; padding: 10px 0; border-top: 1px solid var(--border); }
 .ad-app p { margin: 0; }
 .ad-app-actions { display: flex; gap: 6px; }
+
+/* Dark theme: the same roles, light enough to read on the dark surface. */
+[data-theme='dark'] .ad { --ad-green: #6fb36f; --ad-good: #7fd0a2; --ad-bad: #ff9f95; }

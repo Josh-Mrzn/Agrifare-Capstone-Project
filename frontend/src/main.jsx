@@ -6,6 +6,7 @@ import '@fontsource-variable/fraunces/opsz-italic.css';
 // Before App, so page styles (imported by the pages) win over the shared ones.
 import './index.css';
 import './motion/motion.css';
+import './theme/theme';
 import App from './App.jsx';
 
 // Scopes the motion kit's "hidden until revealed" states, so content stays
