@@ -1,6 +1,7 @@
 import React, { useEffect } from 'react';
 import { Link } from 'react-router-dom';
 import logoImg from '../../assets/logo.png';
+import ThemeToggle from '../../theme/ThemeToggle';
 import './auth.css';
 
 /**
@@ -17,10 +18,13 @@ export default function AuthLayout({ title, intro, children, footer, brand, flip
   return (
     <div className={`auth${flip ? ' auth-flip' : ''}`}>
       <div className="auth-form-side">
-        <Link to="/" className="auth-brand" aria-label="AgriFair home">
-          <img src={logoImg} alt="" width="40" height="40" />
-          <span translate="no">AgriFair</span>
-        </Link>
+        <div className="auth-top">
+          <Link to="/" className="auth-brand" aria-label="AgriFair home">
+            <img src={logoImg} alt="" width="40" height="40" />
+            <span translate="no">AgriFair</span>
+          </Link>
+          <ThemeToggle className="auth-theme" />
+        </div>
 
         <main className="auth-body">
           <h1>{title}</h1>

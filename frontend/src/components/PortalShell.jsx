@@ -2,6 +2,7 @@ import React, { useEffect, useRef, useState } from 'react';
 import { Menu, X, LogOut } from 'lucide-react';
 import logoImg from '../assets/logo.png';
 import { initialsOf } from '../utils/format';
+import ThemeToggle from '../theme/ThemeToggle';
 import './PortalShell.css';
 
 /**
@@ -121,7 +122,10 @@ export default function PortalShell({
             {firstName && <p className="shell-greeting">Hello, {firstName}</p>}
             <h1>{current.label}</h1>
           </div>
-          <div className="shell-top-actions">{headerActions}</div>
+          <div className="shell-top-actions">
+            <ThemeToggle className="btn btn-ghost btn-icon" />
+            {headerActions}
+          </div>
         </header>
 
         {/* Keyed by section, so a newly opened section settles in. */}

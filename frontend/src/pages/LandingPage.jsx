@@ -14,6 +14,7 @@ import useScrolled from '../motion/useScrolled';
 import HighlightsSection from './landing/HighlightsSection';
 import RiceVarieties from '../components/rice-varieties/RiceVarieties';
 import HeroRice from '../components/hero-rice/HeroRice';
+import ThemeToggle from '../theme/ThemeToggle';
 import './LandingPage.css';
 
 const NAV = [
@@ -119,6 +120,8 @@ export default function LandingPage() {
           <nav className="lp-nav-links" aria-label="Main">
             {NAV.map((item) => <a key={item.id} href={`#${item.id}`}>{item.label}</a>)}
           </nav>
+
+          <ThemeToggle className="lp-theme" size={20} />
 
           <Link to="/login" className="lp-pill lp-pill-dark lp-nav-cta af-press">Sign in</Link>
 

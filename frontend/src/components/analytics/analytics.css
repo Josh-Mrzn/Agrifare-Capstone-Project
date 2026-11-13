@@ -35,7 +35,7 @@
   display: inline-flex; align-items: center; gap: 6px; padding: 3px 10px; border-radius: 999px;
   background: var(--accent-soft); color: var(--accent-text); font-weight: 650; font-size: 0.78rem;
 }
-.an-chip:hover { background: rgba(45, 90, 45, 0.18); }
+.an-chip:hover { background: rgba(var(--accent-rgb), 0.18); }
 .an-updated { margin-left: auto; color: var(--text-3); }
 
 /* ---------- Layout ---------- */
@@ -92,9 +92,9 @@
 .an-chart-plot { position: relative; width: 100%; min-width: 0; border-radius: 8px; outline: none; }
 .an-chart-plot:focus-visible { box-shadow: 0 0 0 2px var(--focus); }
 .an-chart-plot.is-selectable { cursor: pointer; }
-.an-gridline { stroke: rgba(18, 33, 18, 0.08); stroke-width: 1; }
+.an-gridline { stroke: rgba(var(--ink), 0.08); stroke-width: 1; }
 .an-axis { fill: var(--text-3); font-size: 10.5px; font-family: var(--font); font-variant-numeric: tabular-nums; }
-.an-cursor { fill: rgba(45, 90, 45, 0.06); }
+.an-cursor { fill: rgba(var(--accent-rgb), 0.06); }
 .an-chart-empty { position: absolute; inset: 0; display: grid; place-items: center; margin: 0; color: var(--text-3); font-size: 0.85rem; pointer-events: none; }
 .an-tip {
   position: absolute; top: 4px; transform: translateX(-50%); z-index: 3; display: grid; gap: 3px; min-width: 170px;
@@ -130,7 +130,7 @@
   width: 100%; padding: 6px 8px; border-radius: 8px; text-align: left;
 }
 button.an-rank-row:hover { background: var(--surface-2); }
-.an-rank-row.is-selected { background: var(--accent-soft); box-shadow: inset 0 0 0 1px rgba(45, 90, 45, 0.25); }
+.an-rank-row.is-selected { background: var(--accent-soft); box-shadow: inset 0 0 0 1px rgba(var(--accent-rgb), 0.25); }
 .an-rank-label { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 0.84rem; font-weight: 600; color: var(--text); }
 .an-rank-track { height: 10px; border-radius: 5px; background: var(--surface-3); overflow: hidden; }
 .an-rank-bar { display: block; height: 100%; border-radius: 5px; }
@@ -238,3 +238,7 @@ button.an-rank-row:hover { background: var(--surface-2); }
 .an-recent-head { display: flex; justify-content: space-between; align-items: center; }
 .an-seller-title { margin: 0; font-family: var(--font-display); font-size: 1.2rem; }
 .an-scroll td.is-primary { min-width: 150px; }
+
+/* ---------- Dark theme ---------- */
+[data-theme='dark'] .an-tip { background: #263a29; }
+[data-theme='dark'] .an-seg button[aria-pressed='true'] { background: var(--g700); }

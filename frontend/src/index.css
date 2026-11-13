@@ -28,24 +28,34 @@
   --gold-lt: #e8c97b;
   --gold-ink: #3a2e08;
 
+  /* What the dark theme swaps: the tint behind borders and quiet fills, the
+     accent as a tint, the page colour and the glass cards, each as r, g, b. */
+  --ink: 18, 33, 18;
+  --accent-rgb: 45, 90, 45;
+  --bg-rgb: 244, 240, 230;
+  --glass: 255, 255, 255;
+  --glass-line: 255, 255, 255;
+
   /* Surfaces */
   --bg: #f4f0e6;
+  --bg-lift: #faf7ed;
   --surface: #fffcf5;
   --surface-2: #f6f2e6;
   --surface-3: #ece6d6;
   --white: #ffffff;
-  --border: rgba(18, 33, 18, 0.09);
-  --border-strong: rgba(18, 33, 18, 0.16);
+  --border: rgba(var(--ink), 0.09);
+  --border-strong: rgba(var(--ink), 0.16);
 
   /* Text */
   --text: #141a14;
   --text-2: #4b5148;
   --text-3: #6b7268;
+  --heading: var(--g900);
 
   /* Roles */
   --accent: var(--g700);
   --accent-hover: var(--g800);
-  --accent-soft: rgba(45, 90, 45, 0.1);
+  --accent-soft: rgba(var(--accent-rgb), 0.1);
   --accent-text: var(--g700);
 
   --success-fg: #2f7a52;
@@ -57,7 +67,7 @@
   --danger-fg: #b03030;
   --danger-bg: rgba(217, 64, 64, 0.12);
   --info-fg: var(--g700);
-  --info-bg: rgba(45, 90, 45, 0.1);
+  --info-bg: rgba(var(--accent-rgb), 0.1);
 
   --focus: var(--g500);
   --overlay: rgba(15, 29, 16, 0.5);
@@ -75,6 +85,61 @@
 
   --ease-out: cubic-bezier(0.22, 1, 0.36, 1);
   --sidebar-w: 252px;
+}
+
+/*
+ * The dark theme: the same forest, turned down to night. Pages sit on a
+ * near-black green, cards one step up, text in cream; gold and the forest
+ * panels (sidebar, sign-in, the landing page's dark cards) stay as they are.
+ * data-theme is set by src/theme/theme.js.
+ */
+:root[data-theme='dark'] {
+  color-scheme: dark;
+
+  --ink: 233, 240, 225;
+  --accent-rgb: 125, 191, 125;
+  --bg-rgb: 11, 19, 12;
+  --glass: 44, 62, 47;
+  --glass-line: 96, 120, 98;
+
+  --bg: #0b130c;
+  --bg-lift: #121d14;
+  --surface: #121d14;
+  --surface-2: #17241a;
+  --surface-3: #1e2e21;
+  --white: #18261b;
+
+  --text: #eef0e6;
+  --text-2: #c0c7b9;
+  --text-3: #949c8e;
+  --heading: #f3f1e4;
+
+  --accent-text: #8fcf8f;
+  --info-fg: #8fcf8f;
+  --success-fg: #7fd0a2;
+  --warning-fg: #e6c870;
+  --danger-fg: #ff9f95;
+
+  --overlay: rgba(0, 0, 0, 0.6);
+
+  --sh-sm: 0 6px 18px rgba(0, 0, 0, 0.25);
+  --sh-md: 0 12px 28px rgba(0, 0, 0, 0.35);
+  --sh-lg: 0 24px 60px rgba(0, 0, 0, 0.5);
+
+  /* Lifted, so forest buttons and selected chips stand off the dark page. */
+  --forest-grad: linear-gradient(165deg, #24492b, #2f6136);
+}
+
+/* Switching theme (ThemeToggle): the old page stays put underneath while the
+   new one is revealed over it, instead of the two cross-fading. */
+::view-transition-old(root),
+::view-transition-new(root) {
+  animation: none;
+  mix-blend-mode: normal;
+}
+
+[data-theme='dark'] .btn-secondary:hover:not(:disabled) {
+  background: var(--surface-3);
 }
 
 /* ---------------------------------------------------------------- Base */
@@ -345,10 +410,10 @@ h4 {
 }
 
 .link {
-  color: var(--g700);
+  color: var(--accent-text);
   font-weight: 650;
   text-decoration: underline;
-  text-decoration-color: rgba(45, 90, 45, 0.3);
+  text-decoration-color: rgba(var(--accent-rgb), 0.3);
   text-underline-offset: 3px;
   transition: text-decoration-color 0.15s ease;
 }
@@ -430,7 +495,7 @@ button.link {
 .input:hover,
 .select:hover,
 .textarea:hover {
-  border-color: rgba(18, 33, 18, 0.28);
+  border-color: rgba(var(--ink), 0.28);
 }
 
 .input:focus,
@@ -505,7 +570,7 @@ button.link {
   width: 38px;
   height: 22px;
   border-radius: 999px;
-  background: rgba(18, 33, 18, 0.18);
+  background: rgba(var(--ink), 0.18);
   cursor: pointer;
   transition: background-color 0.2s ease;
 }
@@ -638,7 +703,7 @@ button.link {
   line-height: 1.5;
   text-transform: uppercase;
   white-space: nowrap;
-  background: rgba(18, 33, 18, 0.07);
+  background: rgba(var(--ink), 0.07);
   color: var(--text-3);
 }
 
@@ -754,13 +819,13 @@ button.stat:hover {
   height: 38px;
   margin-bottom: 12px;
   border-radius: 11px;
-  background: rgba(45, 90, 45, 0.12);
-  color: var(--g700);
+  background: rgba(var(--accent-rgb), 0.12);
+  color: var(--accent-text);
 }
 
 .stat--gold .stat-icon {
   background: rgba(201, 168, 76, 0.22);
-  color: #7a5f18;
+  color: var(--warning-fg);
 }
 
 .stat-label {
@@ -862,7 +927,7 @@ button.stat:hover {
 
 .table td {
   padding: 12px 18px;
-  border-bottom: 1px solid rgba(18, 33, 18, 0.055);
+  border-bottom: 1px solid rgba(var(--ink), 0.055);
   color: var(--text-2);
   vertical-align: middle;
 }
@@ -928,7 +993,7 @@ button.stat:hover {
 }
 
 .row-link:hover {
-  color: var(--g700);
+  color: var(--accent-text);
   text-decoration: underline;
   text-underline-offset: 3px;
 }
@@ -1117,7 +1182,7 @@ button.list-row:hover {
   min-width: 20px;
   padding: 0 6px;
   border-radius: 999px;
-  background: rgba(18, 33, 18, 0.07);
+  background: rgba(var(--ink), 0.07);
   color: inherit;
   font-size: 0.7rem;
   line-height: 18px;
@@ -1206,7 +1271,7 @@ button.list-row:hover {
 .skeleton {
   display: block;
   border-radius: 14px;
-  background: linear-gradient(90deg, rgba(18, 33, 18, 0.05) 25%, rgba(18, 33, 18, 0.1) 37%, rgba(18, 33, 18, 0.05) 63%);
+  background: linear-gradient(90deg, rgba(var(--ink), 0.05) 25%, rgba(var(--ink), 0.1) 37%, rgba(var(--ink), 0.05) 63%);
   background-size: 400% 100%;
   animation: shimmer 1.4s ease infinite;
 }
@@ -1587,7 +1652,7 @@ label.btn.is-disabled {
 }
 
 .thumb-add:hover {
-  color: var(--g700);
+  color: var(--accent-text);
   border-color: var(--g500);
 }
 

@@ -42,11 +42,32 @@
   position: relative;
 }
 
+.auth-top {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.auth-theme {
+  display: grid;
+  place-items: center;
+  width: 40px;
+  height: 40px;
+  border-radius: 10px;
+  color: rgba(255, 255, 255, 0.75);
+  transition: background 0.2s ease, color 0.2s ease;
+}
+
+.auth-theme:hover {
+  background: rgba(255, 255, 255, 0.08);
+  color: #fff;
+}
+
 .auth-brand {
   display: inline-flex;
   align-items: center;
   gap: 12px;
-  align-self: flex-start;
   padding: 6px 14px 6px 6px;
   border: 1px solid rgba(255, 255, 255, 0.1);
   border-radius: 14px;
@@ -248,7 +269,7 @@
   background:
     radial-gradient(circle at 86% 4%, rgba(201, 168, 76, 0.22), transparent 26%),
     radial-gradient(circle at 12% 92%, rgba(74, 140, 74, 0.15), transparent 30%),
-    linear-gradient(145deg, #faf7ed, var(--bg));
+    linear-gradient(145deg, var(--bg-lift), var(--bg));
 }
 
 /* Two thin rings, as in the original: quiet structure behind the copy. */
@@ -256,7 +277,7 @@
 .auth-brand-side::after {
   content: '';
   position: absolute;
-  border: 1px solid rgba(18, 33, 18, 0.07);
+  border: 1px solid rgba(var(--ink), 0.07);
   border-radius: 50%;
 }
 
@@ -285,10 +306,10 @@
   align-items: center;
   gap: 9px;
   padding: 6px 15px;
-  border: 1px solid rgba(18, 33, 18, 0.1);
+  border: 1px solid rgba(var(--ink), 0.1);
   border-radius: 999px;
-  background: rgba(255, 255, 255, 0.65);
-  color: var(--g800);
+  background: rgba(var(--glass), 0.65);
+  color: var(--heading);
   font-size: 0.74rem;
   font-weight: 700;
   letter-spacing: 0.12em;
@@ -307,13 +328,13 @@
   font-size: clamp(2.4rem, 4.2vw, 3.8rem);
   line-height: 1.02;
   letter-spacing: -0.035em;
-  color: var(--g900);
+  color: var(--heading);
 }
 
 .auth-brand-side h2 em {
   display: block;
   font-weight: 600;
-  color: var(--g700);
+  color: var(--accent-text);
 }
 
 .auth-brand-text {
