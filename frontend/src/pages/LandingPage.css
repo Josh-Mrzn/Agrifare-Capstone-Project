@@ -421,9 +421,15 @@ html:has(.lp) {
   width: 100%;
 }
 
-.lp-hero-visual img {
-  position: relative;
+/* The stalk image and the grains drawn over it: one box, so they float and
+   drift together. */
+.lp-hero-art {
   width: min(100%, 520px);
+}
+
+.lp-hero-art img {
+  display: block;
+  width: 100%;
   height: auto;
   filter: drop-shadow(0 30px 40px rgba(18, 33, 18, 0.18));
 }
@@ -1222,7 +1228,7 @@ html:has(.lp) {
     grid-template-columns: 1fr;
   }
 
-  .lp-hero-visual img {
+  .lp-hero-art {
     width: min(70%, 360px);
   }
 

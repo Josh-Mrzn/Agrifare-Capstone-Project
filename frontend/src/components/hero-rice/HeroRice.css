@@ -1,0 +1,36 @@
+/* The stalk image, and the canvas its grains are drawn on, one over the other. */
+.hero-rice {
+  position: relative;
+}
+
+/* The stalk sinks toward the foot of the bundle as it is wiped away. */
+.hero-rice img {
+  position: relative;
+  transform-origin: 48% 92%;
+  will-change: opacity, transform;
+}
+
+/* A warm glow behind the mound; the loop fades it in and out. */
+.hero-rice-glow {
+  position: absolute;
+  left: 50%;
+  top: 66%;
+  width: 120%;
+  aspect-ratio: 1;
+  border-radius: 50%;
+  background: radial-gradient(closest-side, rgba(201, 162, 74, 0.36), rgba(201, 162, 74, 0.12) 55%, transparent);
+  transform: translate(-50%, -50%);
+  opacity: 0;
+  pointer-events: none;
+}
+
+/* Larger than the image, so grains in flight and the mound's foot are never
+   cut off. It catches no clicks. */
+.hero-rice-canvas {
+  position: absolute;
+  top: -2%;
+  left: -10%;
+  width: 120%;
+  height: 114%;
+  pointer-events: none;
+}

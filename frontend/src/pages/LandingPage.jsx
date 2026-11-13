@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import { Link } from 'react-router-dom';
 import {
   Menu, X, Download, Copy, Check, ArrowRight, BadgeCheck, Scale, Wallet, Truck,
@@ -13,6 +13,7 @@ import Reveal from '../motion/Reveal';
 import useScrolled from '../motion/useScrolled';
 import HighlightsSection from './landing/HighlightsSection';
 import RiceVarieties from '../components/rice-varieties/RiceVarieties';
+import HeroRice from '../components/hero-rice/HeroRice';
 import './LandingPage.css';
 
 const NAV = [
@@ -57,6 +58,7 @@ export default function LandingPage() {
   const scrolled = useScrolled(8);
   const [qrSrc, setQrSrc] = useState('');
   const [copied, setCopied] = useState(false);
+  const heroFloorRef = useRef(null);
 
   useEffect(() => {
     document.title = 'AgriFair: rice straight from the farm';
@@ -181,15 +183,16 @@ export default function LandingPage() {
 
             <Reveal variant="scale" delay={300} className="lp-hero-visual">
               <div className="lp-hero-stalk">
-                <span className="lp-hero-shadow af-float-shadow" aria-hidden="true" />
-                <img
-                  className="af-float"
-                  src={riceStalk}
-                  alt="A bundle of golden rice stalks"
-                  width="900"
-                  height="900"
-                  fetchPriority="high"
-                />
+                <span ref={heroFloorRef} className="lp-hero-shadow af-float-shadow" aria-hidden="true" />
+                <HeroRice className="lp-hero-art af-float" floorRef={heroFloorRef}>
+                  <img
+                    src={riceStalk}
+                    alt="A bundle of golden rice stalks"
+                    width="900"
+                    height="900"
+                    fetchPriority="high"
+                  />
+                </HeroRice>
               </div>
             </Reveal>
           </div>
